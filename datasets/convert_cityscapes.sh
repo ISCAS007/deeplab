@@ -21,7 +21,7 @@
 # Cityscapes at https://github.com/mcordts/cityscapesScripts.
 #
 # Usage:
-#   bash ./preprocess_cityscapes.sh
+#   bash ./convert_cityscapes.sh
 #
 # The folder structure is assumed to be:
 #  + datasets
@@ -43,6 +43,15 @@ WORK_DIR="."
 CITYSCAPES_ROOT="${WORK_DIR}/cityscapes"
 
 # Create training labels.
+# export CITYSCAPES_DATASET=/xxx/cityscapes/gtFine_trainvaltest
+#  /xxx/cityscapes/gtFine_trainvaltest
+#    +gtFine
+#      - test
+#      - train
+#      - val
+#    +gtCoarse
+#      - ...
+
 python "${CITYSCAPES_ROOT}/cityscapesscripts/preparation/createTrainIdLabelImgs.py"
 
 # Build TFRecords of the dataset.

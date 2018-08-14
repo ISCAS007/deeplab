@@ -16,10 +16,9 @@
 """Converts Cityscapes data to TFRecord file format with Example protos.
 
 The Cityscapes dataset is expected to have the following directory structure:
-
+  - build_cityscapes_data.py (current working directiory).
+  - build_data.py
   + cityscapes
-     - build_cityscapes_data.py (current working directiory).
-     - build_data.py
      + cityscapesscripts
        + annotation
        + evaluation
