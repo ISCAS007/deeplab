@@ -25,7 +25,6 @@ from deeplab.datasets import segmentation_dataset
 from deeplab.utils import input_generator
 from deeplab.utils import train_utils
 from deployment import model_deploy
-from src.utils.disc import tf_batch_get_edge
 
 slim = tf.contrib.slim
 
@@ -193,11 +192,7 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, ignore_label):
       samples[common.IMAGE], name=common.IMAGE)
   samples[common.LABEL] = tf.identity(
       samples[common.LABEL], name=common.LABEL)
-  
-  # default session is None here, and supervisor not offer session
-#  sess=tf.get_default_session()
-#  samples[common.EDGE] = tf_batch_get_edge(session=sess,tf_labels=samples[common.LABEL],name=common.LABEL)
-  
+
   model_options = common.ModelOptions(
       outputs_to_num_classes=outputs_to_num_classes,
       crop_size=FLAGS.train_crop_size,
@@ -278,8 +273,7 @@ def main(unused_argv):
       # Define the model and create clones.
       model_fn = _build_deeplab
       model_args = (inputs_queue, {
-          common.OUTPUT_TYPE: dataset.num_classes,
-          common.EDGE: 2
+          common.OUTPUT_TYPE: dataset.num_classes
       }, dataset.ignore_label)
       clones = model_deploy.create_clones(config, model_fn, args=model_args)
 
