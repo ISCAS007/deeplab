@@ -9,6 +9,8 @@ import glob
 import numpy as np
 from torch.utils import data as td
 from easydict import EasyDict as edict
+from deeplab import input_preprocess
+from deeplab import common
 
 def get_dataset_files(dataset_name,dataset_split):
     if dataset_name == 'cityscapes':
@@ -17,7 +19,7 @@ def get_dataset_files(dataset_name,dataset_split):
         label_files=glob.glob(os.path.join(root,'gtFine',dataset_split,'**','*labelTrainIds.png'),recursive=True)
         img_files.sort()
         label_files.sort()
-    elif dataset_name == 'voc':
+    elif dataset_name == 'pascal_voc_seg':
         root='deeplab/datasets/pascal_voc_seg'
         assert False
     else:
@@ -27,6 +29,41 @@ def get_dataset_files(dataset_name,dataset_split):
     assert len(img_files)==len(label_files),'number of image file is not equal to label file'
     
     return img_files,label_files
+
+def preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training=True):
+    
+    crop_size=FLAGS.train_crop_size
+    original_image, image, label = input_preprocess.preprocess_image_and_label(
+        tf_image,
+        tf_label,
+        crop_height=crop_size[0],
+        crop_width=crop_size[1],
+        min_resize_value=FLAGS.min_resize_value,
+        max_resize_value=FLAGS.max_resize_value,
+        resize_factor=FLAGS.resize_factor,
+        min_scale_factor=FLAGS.min_scale_factor,
+        max_scale_factor=FLAGS.max_scale_factor,
+        scale_factor_step_size=FLAGS.scale_factor_step_size,
+        ignore_label=ignore_label,
+        is_training=is_training,
+        model_variant=FLAGS.model_variant)
+    
+    return image,label
+
+def batch_preprocess_image_and_label(numpy_image_4d,numpy_label_3d,FLAGS,ignore_label,is_training=True):
+    b,h,w,c=numpy_image_4d.shape
+    tf_images=[]
+    tf_labels=[]
+    for idx in range(b):
+        tf_image=tf.convert_to_tensor(numpy_image_4d[idx,:,:,:],dtype=tf.float32)
+        numpy_label_4d=np.expand_dims(numpy_label_3d,axis=-1)
+        tf_label=tf.convert_to_tensor(numpy_label_4d[idx,:,:,:],dtype=tf.int32)
+        
+        pre_tf_image,pre_tf_label=preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training)
+        tf_images.append(pre_tf_image)
+        tf_labels.append(pre_tf_label)
+    
+    return tf.stack(tf_images,name=common.IMAGE),tf.stack(tf_labels,name=common.LABEL)
         
 class dataset_pipeline():
     def __init__(self,config,image_files,label_files):

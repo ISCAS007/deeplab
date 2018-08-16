@@ -4,9 +4,10 @@ from deeplab import model
 import tensorflow as tf
 from deeplab.utils import train_utils
 from deeplab.core import feature_extractor
-from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline
+from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, batch_preprocess_image_and_label
 from torch.utils import data as td
 from easydict import EasyDict as edict
+from deeplab.datasets import segmentation_dataset
 import six
 
 slim = tf.contrib.slim
@@ -18,12 +19,23 @@ ASPP_SCOPE = 'aspp'
 CONCAT_PROJECTION_SCOPE = 'concat_projection'
 DECODER_SCOPE = 'decoder'
 
+DATASETS_CLASS_NUM = {
+    'cityscapes': 19,
+    'pascal_voc_seg': 21,
+    'ade20k': 151,
+}
 
-class deeplab():
+DATASETS_IGNORE_LABEL = {
+    'cityscapes': 255,
+    'pascal_voc_seg': 255,
+    'ade20k': 0,
+}
+
+class deeplab_base():
     def __init__(self, flags):
         self.flags = flags
 
-    def _build_model(self, images, labels):
+    def _build_model(self, images, labels, num_classes):
         """Builds a clone of DeepLab.
 
         Args:
@@ -43,7 +55,7 @@ class deeplab():
         """
         FLAGS = self.flags
         outputs_to_num_classes = {
-            common.OUTPUT_TYPE: FLAGS.num_classes
+            common.OUTPUT_TYPE: num_classes
         }
         ignore_label = 255
         model_options = common.ModelOptions(
@@ -66,7 +78,11 @@ class deeplab():
         output_type_dict[model.MERGED_LOGITS_SCOPE] = tf.identity(
             output_type_dict[model.MERGED_LOGITS_SCOPE],
             name=common.OUTPUT_TYPE)
-
+        
+        for output, num_classes in six.iteritems(outputs_to_num_classes):
+            for scale, logits in six.iteritems(outputs_to_scales_to_logits[output]):
+                print(output,scale,logits.shape)
+        
         losses = dict()
         for output, num_classes in six.iteritems(outputs_to_num_classes):
             loss = train_utils.add_softmax_cross_entropy_loss_for_each_scale(
@@ -85,11 +101,11 @@ class deeplab():
         FLAGS = self.flags
         dataset_split = 'train'
         img_files, label_files = get_dataset_files(
-            FLAGS.dataset_name, dataset_split)
+            FLAGS.dataset, dataset_split)
 
         config = edict()
         config.num_threads = 4
-        config.batch_size = 4
+        config.batch_size = FLAGS.train_batch_size
         config.edge_width = 5
         dataset = dataset_pipeline(config, img_files, label_files)
         data_loader = td.DataLoader(
@@ -106,24 +122,34 @@ class deeplab():
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())
 
-        input_shape = (FLAGS.batch_size,
-                       FLAGS.input_shape[0], FLAGS.input_shape[1], 3)
+        images_shape = (FLAGS.train_batch_size,
+                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 3)
+        labels_shape = (FLAGS.train_batch_size,
+                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 1)
         images = tf.placeholder(
-            type=tf.float32, shape=input_shape, name=common.IMAGE)
+            dtype=tf.float32, shape=images_shape, name=common.IMAGE)
         labels = tf.placeholder(
-            type=tf.int32, shape=input_shape, name=common.LABEL)
-        outputs_to_scales_to_logits, losses = self._build_model(images, labels)
+            dtype=tf.int32, shape=labels_shape, name=common.LABEL)
+        
+        num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
+        ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        outputs_to_scales_to_logits, losses = self._build_model(images, labels, num_classes)
+        total_loss=0
+        for loss in losses.values():
+            total_loss+=loss
+        
+        epoches=FLAGS.training_number_of_steps//len(data_loader)
 #        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
-        for epoch in range(FLAGS.epoch):
+        for epoch in range(epoches):
             for i, (images, labels, edges) in enumerate(data_loader):
-                tf_images_4d = tf.convert_to_tensor(images.numpy(), tf.float32)
-                tf_labels_3d = tf.convert_to_tensor(labels.numpy(), tf.int32)
-                tf_labels_4d = tf.expand_dims(tf_labels_3d, axis=-1)
-#                tf_edges_3d=tf.convert_to_tensor(edges.numpy(),tf.int32)
-#                tf_edges_4d=tf.expand_dims(tf_edges_3d,axis=-1)
-
-                sess.run(fetches=[optimizer.minimize(losses), losses], feed_dict={
+                tf_images_4d,tf_labels_4d=batch_preprocess_image_and_label(images.numpy(),labels.numpy(),FLAGS,ignore_label,is_training=True)
+#                tf_labels_4d = tf.expand_dims(tf_labels_3d, axis=-1)
+                
+                print(tf_images_4d.shape,tf_labels_4d)
+                sess.run(fetches=[optimizer.minimize(total_loss), total_loss], feed_dict={
                          images: tf_images_4d, labels: tf_labels_4d})
+            
+                print(dataset_split,i,'*'*50)
 
     def val(self):
         FLAGS = self.flags
@@ -133,7 +159,7 @@ class deeplab():
 
         config = edict()
         config.num_threads = 4
-        config.batch_size = 4
+        config.batch_size = FLAGS.train_batch_size
         config.edge_width = 5
         dataset = dataset_pipeline(config, img_files, label_files)
         data_loader = td.DataLoader(

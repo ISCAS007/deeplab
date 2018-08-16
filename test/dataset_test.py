@@ -173,8 +173,10 @@ def main(unused_argv):
     sess=tf.Session()
     init=tf.global_variables_initializer()
     sess.run(init)
+    tf.train.start_queue_runners(sess)
     
-    print(type(image))
+    np_image,np_height,np_width=sess.run([image,height,width])
+    print(np_image.shape,np_height,np_width)
     
     # Some datasets do not contain image_name.
     if common.IMAGE_NAME in data_provider.list_items():
@@ -211,6 +213,10 @@ def main(unused_argv):
         ignore_label=dataset.ignore_label,
         is_training=is_training,
         model_variant=FLAGS.model_variant)
+    
+    np_org_img,np_img,np_label=sess.run([original_image,image,label])
+    print(np_org_img.shape,np_img.shape,np_label.shape)
+    
     sample = {
         common.IMAGE: image,
         common.IMAGE_NAME: image_name,
@@ -262,6 +268,9 @@ def main(unused_argv):
     image=sess.run(samples[common.IMAGE])
     label=sess.run(samples[common.LABEL])
     ids=np.unique(label)
+    
+    for idx in range(batch_size):
+        samples[common.IMAGE][idx,:,:,:]=samples[common.IMAGE][batch_size-1-idx,:,:,:]
     print('unique ids is: ',ids)
     print('end'+'.'*50)
     
