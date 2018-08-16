@@ -290,16 +290,16 @@ def main(unused_argv):
         # Add summaries for model variables.
         for model_var in slim.get_model_variables():
             summaries.add(tf.summary.histogram(model_var.op.name, model_var))
-
+        
+        label_name=('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/')
+        print('first clone label name is:',label_name)
+            
         # Add summaries for images, labels, semantic predictions
         if FLAGS.save_summaries_images:
             summary_image = graph.get_tensor_by_name(
                 ('%s/%s:0' % (first_clone_scope, common.IMAGE)).strip('/'))
             summaries.add(
                 tf.summary.image('samples/%s' % common.IMAGE, summary_image))
-            
-            label_name=('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/')
-            print('first clone label name is:',label_name)
             
             first_clone_label = graph.get_tensor_by_name(
                 ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/'))
