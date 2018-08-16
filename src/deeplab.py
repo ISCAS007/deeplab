@@ -4,6 +4,9 @@ from deeplab import model
 import tensorflow as tf
 from deeplab.utils import train_utils
 from deeplab.core import feature_extractor
+from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline
+from torch.utils import data as td
+from easydict import EasyDict as edict
 import six
 
 slim = tf.contrib.slim
@@ -20,7 +23,7 @@ class deeplab():
     def __init__(self, flags):
         self.flags = flags
 
-    def _build_model(self, input_shape, outputs_to_num_classes, ignore_label):
+    def _build_model(self, images, labels):
         """Builds a clone of DeepLab.
 
         Args:
@@ -39,43 +42,111 @@ class deeplab():
             'logits_1.50'.
         """
         FLAGS = self.flags
-        images = tf.placeholder(
-            type=tf.float32, shape=input_shape, name=common.IMAGE)
-        labels = tf.placeholder(
-            type=tf.int32, shape=input_shape, name=common.LABEL)
-
+        outputs_to_num_classes = {
+            common.OUTPUT_TYPE: FLAGS.num_classes
+        }
+        ignore_label = 255
         model_options = common.ModelOptions(
             outputs_to_num_classes=outputs_to_num_classes,
             crop_size=FLAGS.train_crop_size,
             atrous_rates=FLAGS.atrous_rates,
             output_stride=FLAGS.output_stride)
-        
-        with tf.Graph().as_default() as graph:
-            outputs_to_scales_to_logits = multi_scale_logits(
-                images,
-                model_options=model_options,
-                image_pyramid=FLAGS.image_pyramid,
-                weight_decay=FLAGS.weight_decay,
-                is_training=True,
-                fine_tune_batch_norm=FLAGS.fine_tune_batch_norm)
-    
-            # Add name to graph node so we can add to summary.
-            output_type_dict = outputs_to_scales_to_logits[common.OUTPUT_TYPE]
-            output_type_dict[model.MERGED_LOGITS_SCOPE] = tf.identity(
-                output_type_dict[model.MERGED_LOGITS_SCOPE],
-                name=common.OUTPUT_TYPE)
-    
-            for output, num_classes in six.iteritems(outputs_to_num_classes):
-                train_utils.add_softmax_cross_entropy_loss_for_each_scale(
-                    outputs_to_scales_to_logits[output],
-                    labels,
-                    num_classes,
-                    ignore_label,
-                    loss_weight=1.0,
-                    upsample_logits=FLAGS.upsample_logits,
-                    scope=output)
-            
-            return outputs_to_scales_to_logits
+
+#        with tf.Graph().as_default() as graph:
+        outputs_to_scales_to_logits = multi_scale_logits(
+            images,
+            model_options=model_options,
+            image_pyramid=FLAGS.image_pyramid,
+            weight_decay=FLAGS.weight_decay,
+            is_training=True,
+            fine_tune_batch_norm=FLAGS.fine_tune_batch_norm)
+
+        # Add name to graph node so we can add to summary.
+        output_type_dict = outputs_to_scales_to_logits[common.OUTPUT_TYPE]
+        output_type_dict[model.MERGED_LOGITS_SCOPE] = tf.identity(
+            output_type_dict[model.MERGED_LOGITS_SCOPE],
+            name=common.OUTPUT_TYPE)
+
+        losses = dict()
+        for output, num_classes in six.iteritems(outputs_to_num_classes):
+            loss = train_utils.add_softmax_cross_entropy_loss_for_each_scale(
+                outputs_to_scales_to_logits[output],
+                labels,
+                num_classes,
+                ignore_label,
+                loss_weight=1.0,
+                upsample_logits=FLAGS.upsample_logits,
+                scope=output)
+            losses[output] = loss
+
+        return outputs_to_scales_to_logits, losses
+
+    def train(self):
+        FLAGS = self.flags
+        dataset_split = 'train'
+        img_files, label_files = get_dataset_files(
+            FLAGS.dataset_name, dataset_split)
+
+        config = edict()
+        config.num_threads = 4
+        config.batch_size = 4
+        config.edge_width = 5
+        dataset = dataset_pipeline(config, img_files, label_files)
+        data_loader = td.DataLoader(
+            dataset=dataset, batch_size=config.batch_size, shuffle=True, drop_last=True, num_workers=8)
+        # Build the optimizer based on the device specification.
+        learning_rate = train_utils.get_model_learning_rate(
+            FLAGS.learning_policy, FLAGS.base_learning_rate,
+            FLAGS.learning_rate_decay_step, FLAGS.learning_rate_decay_factor,
+            FLAGS.training_number_of_steps, FLAGS.learning_power,
+            FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
+        optimizer = tf.train.MomentumOptimizer(
+            learning_rate, FLAGS.momentum)
+
+        sess = tf.Session()
+        sess.run(tf.global_variables_initializer())
+
+        input_shape = (FLAGS.batch_size,
+                       FLAGS.input_shape[0], FLAGS.input_shape[1], 3)
+        images = tf.placeholder(
+            type=tf.float32, shape=input_shape, name=common.IMAGE)
+        labels = tf.placeholder(
+            type=tf.int32, shape=input_shape, name=common.LABEL)
+        outputs_to_scales_to_logits, losses = self._build_model(images, labels)
+#        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
+        for epoch in range(FLAGS.epoch):
+            for i, (images, labels, edges) in enumerate(data_loader):
+                tf_images_4d = tf.convert_to_tensor(images.numpy(), tf.float32)
+                tf_labels_3d = tf.convert_to_tensor(labels.numpy(), tf.int32)
+                tf_labels_4d = tf.expand_dims(tf_labels_3d, axis=-1)
+#                tf_edges_3d=tf.convert_to_tensor(edges.numpy(),tf.int32)
+#                tf_edges_4d=tf.expand_dims(tf_edges_3d,axis=-1)
+
+                sess.run(fetches=[optimizer.minimize(losses), losses], feed_dict={
+                         images: tf_images_4d, labels: tf_labels_4d})
+
+    def val(self):
+        FLAGS = self.flags
+        dataset_split = 'val'
+        img_files, label_files = get_dataset_files(
+            FLAGS.dataset_name, dataset_split)
+
+        config = edict()
+        config.num_threads = 4
+        config.batch_size = 4
+        config.edge_width = 5
+        dataset = dataset_pipeline(config, img_files, label_files)
+        data_loader = td.DataLoader(
+            dataset=dataset, batch_size=config.batch_size, shuffle=True, drop_last=True, num_workers=8)
+
+#        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
+        for epoch in range(FLAGS.epoch):
+            for i, (images, labels, edges) in enumerate(data_loader):
+                tf_images_4d = tf.convert_to_tensor(images.numpy(), tf.float32)
+                tf_labels_3d = tf.convert_to_tensor(labels.numpy(), tf.int32)
+                tf_labels_4d = tf.expand_dims(tf_labels_3d, axis=-1)
+                tf_edges_3d = tf.convert_to_tensor(edges.numpy(), tf.int32)
+                tf_edges_4d = tf.expand_dims(tf_edges_3d, axis=-1)
 
 
 def scale_dimension(dim, scale):
