@@ -125,11 +125,18 @@ class deeplab_base():
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())
 
-        images_shape = (FLAGS.train_batch_size,
-                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 3)
-        labels_shape = (FLAGS.train_batch_size,
-                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 1)
+#        images_shape = (FLAGS.train_batch_size,
+#                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 3)
+#        labels_shape = (FLAGS.train_batch_size,
+#                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 1)
         
+        images_shape = (FLAGS.train_batch_size,
+                       1024, 2048, 3)
+        labels_shape = (FLAGS.train_batch_size,
+                       1024, 2048, 1)
+        
+        print('image shape is',images_shape)
+        print('label shape is',labels_shape)
         images_placeholder=[tf.placeholder(
             dtype=tf.float32, shape=images_shape[1:]) for idx in range(FLAGS.train_batch_size)]
         labels_placeholder=[tf.placeholder(
@@ -149,6 +156,8 @@ class deeplab_base():
         labels=tf.stack(values=labels_preprocess,axis=0,name=common.LABEL)
         assert len(images.shape)==4
         assert len(labels.shape)==4
+        print('image shape is',images.shape)
+        print('label shape is',labels.shape)
 #        images = tf.placeholder(
 #            dtype=tf.float32, shape=images_shape, name=common.IMAGE)
 #        labels = tf.placeholder(
@@ -169,6 +178,9 @@ class deeplab_base():
                 
                 np_images=np.split(images.numpy(),FLAGS.train_batch_size,axis=0)
                 np_labels=np.split(labels.numpy(),FLAGS.train_batch_size,axis=0)
+                np_images=[i[0,:,:,:] for i in np_images]
+                np_labels=[np.expand_dims(i[0,:,:],axis=-1) for i in np_labels]
+                
                 np_values=[]
                 np_values.extend(np_images)
                 np_values.extend(np_labels)
