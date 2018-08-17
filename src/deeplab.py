@@ -168,7 +168,8 @@ class deeplab_base():
             total_loss+=loss
         
         sess.run(tf.global_variables_initializer())
-        epoches=FLAGS.training_number_of_steps//len(data_loader)
+        sess.run(tf.local_variables_initializer())
+        epoches=1+FLAGS.training_number_of_steps//len(data_loader)
         print('epoches is',epoches)
         print('step is',len(data_loader))
 #        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
