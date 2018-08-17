@@ -169,6 +169,8 @@ class deeplab_base():
         
         sess.run(tf.global_variables_initializer())
         epoches=FLAGS.training_number_of_steps//len(data_loader)
+        print('epoches is',epoches)
+        print('step is',len(data_loader))
 #        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
         for epoch in range(epoches):
             for i, (images, labels, edges) in enumerate(data_loader):
