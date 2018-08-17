@@ -138,7 +138,7 @@ flags.DEFINE_float('slow_start_learning_rate', 1e-4,
 
 # Set to True if one wants to fine-tune the batch norm parameters in DeepLabv3.
 # Set to False and use small batch size to save GPU memory.
-flags.DEFINE_boolean('fine_tune_batch_norm', True,
+flags.DEFINE_boolean('fine_tune_batch_norm', False,
                      'Fine tune the batch norm parameters or not.')
 
 flags.DEFINE_float('min_scale_factor', 0.5,

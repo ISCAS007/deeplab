@@ -123,8 +123,7 @@ class deeplab_base():
         num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
         ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
         sess = tf.Session()
-        sess.run(tf.global_variables_initializer())
-
+        
 #        images_shape = (FLAGS.train_batch_size,
 #                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 3)
 #        labels_shape = (FLAGS.train_batch_size,
@@ -168,6 +167,7 @@ class deeplab_base():
         for loss in losses.values():
             total_loss+=loss
         
+        sess.run(tf.global_variables_initializer())
         epoches=FLAGS.training_number_of_steps//len(data_loader)
 #        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
         for epoch in range(epoches):
