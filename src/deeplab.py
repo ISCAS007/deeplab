@@ -134,6 +134,9 @@ class deeplab_base():
             dtype=tf.float32, shape=images_shape[1:]) for idx in range(FLAGS.train_batch_size)]
         labels_placeholder=[tf.placeholder(
             dtype=tf.int32, shape=labels_shape[1:]) for idx in range(FLAGS.train_batch_size)]
+        placeholders=[]
+        placeholders.extend(images_placeholder)
+        placeholders.extend(labels_placeholder)
         
         images_preprocess=[]
         labels_preprocess=[]
@@ -166,8 +169,11 @@ class deeplab_base():
                 
                 np_images=np.split(images.numpy(),FLAGS.train_batch_size,axis=0)
                 np_labels=np.split(labels.numpy(),FLAGS.train_batch_size,axis=0)
+                np_values=[]
+                np_values.extend(np_images)
+                np_values.extend(np_labels)
                 sess.run(fetches=[optimizer.minimize(total_loss), total_loss], feed_dict={
-                         i:d for i,d in zip(images_placeholder,np_images),i:d for i,d in zip(labels_placeholder: np_labels)})
+                         i:d for i,d in zip(placeholders,np_values)})
             
                 print(dataset_split,i,'*'*50)
 
