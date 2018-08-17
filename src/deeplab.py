@@ -122,7 +122,11 @@ class deeplab_base():
         
         num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
         ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
-        sess = tf.Session()
+        # Soft placement allows placing on CPU ops without GPU implementation.
+        session_config = tf.ConfigProto(
+            allow_soft_placement=True, log_device_placement=False)
+
+        sess = tf.Session(config=session_config)
         
 #        images_shape = (FLAGS.train_batch_size,
 #                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 3)
@@ -157,18 +161,24 @@ class deeplab_base():
         assert len(labels.shape)==4
         print('image shape is',images.shape)
         print('label shape is',labels.shape)
-#        images = tf.placeholder(
-#            dtype=tf.float32, shape=images_shape, name=common.IMAGE)
-#        labels = tf.placeholder(
-#            dtype=tf.int32, shape=labels_shape, name=common.LABEL)
-        
         outputs_to_scales_to_logits, losses = self._build_model(images, labels, num_classes)
         total_loss=0
         for loss in losses.values():
             total_loss+=loss
         
+        # Modify the gradients for biases and last layer variables.
+        last_layers = get_extra_layer_scopes(
+                FLAGS.last_layers_contain_logits_only)
+        
         sess.run(tf.global_variables_initializer())
-        epoches=FLAGS.training_number_of_steps//len(data_loader)
+        init_fn=train_utils.get_model_init_fn(
+                FLAGS.train_logdir,
+                FLAGS.tf_initial_checkpoint,
+                FLAGS.initialize_last_layer,
+                last_layers,
+                ignore_missing_vars=True)
+        sess.run(init_fn)
+        epoches=1+FLAGS.training_number_of_steps//len(data_loader)
         print('epoches is',epoches)
         print('step is',len(data_loader))
 #        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
@@ -204,15 +214,28 @@ class deeplab_base():
         dataset = dataset_pipeline(config, img_files, label_files)
         data_loader = td.DataLoader(
             dataset=dataset, batch_size=config.batch_size, shuffle=True, drop_last=True, num_workers=8)
+        print('step',len(data_loader))
 
-#        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
-        for epoch in range(FLAGS.epoch):
-            for i, (images, labels, edges) in enumerate(data_loader):
-                tf_images_4d = tf.convert_to_tensor(images.numpy(), tf.float32)
-                tf_labels_3d = tf.convert_to_tensor(labels.numpy(), tf.int32)
-                tf_labels_4d = tf.expand_dims(tf_labels_3d, axis=-1)
-                tf_edges_3d = tf.convert_to_tensor(edges.numpy(), tf.int32)
-                tf_edges_4d = tf.expand_dims(tf_edges_3d, axis=-1)
+def get_extra_layer_scopes(last_layers_contain_logits_only=False):
+    """Gets the scopes for extra layers.
+
+    Args:
+      last_layers_contain_logits_only: Boolean, True if only consider logits as
+      the last layer (i.e., exclude ASPP module, decoder module and so on)
+
+    Returns:
+      A list of scopes for extra layers.
+    """
+    if last_layers_contain_logits_only:
+        return [LOGITS_SCOPE_NAME]
+    else:
+        return [
+            LOGITS_SCOPE_NAME,
+            IMAGE_POOLING_SCOPE,
+            ASPP_SCOPE,
+            CONCAT_PROJECTION_SCOPE,
+            DECODER_SCOPE,
+        ]
 
 
 def scale_dimension(dim, scale):
