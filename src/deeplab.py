@@ -167,7 +167,7 @@ class deeplab_base():
                 np_images=np.split(images.numpy(),FLAGS.train_batch_size,axis=0)
                 np_labels=np.split(labels.numpy(),FLAGS.train_batch_size,axis=0)
                 sess.run(fetches=[optimizer.minimize(total_loss), total_loss], feed_dict={
-                         images_placeholder: np_images, labels_placeholder: np_labels})
+                         i:d for i,d in zip(images_placeholder,np_images),i:d for i,d in zip(labels_placeholder: np_labels)})
             
                 print(dataset_split,i,'*'*50)
 
