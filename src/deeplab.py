@@ -171,6 +171,7 @@ class deeplab_base():
                 FLAGS.last_layers_contain_logits_only)
         
         sess.run(tf.global_variables_initializer())
+#        sess.run(tf.local_variables_initializer())
         init_fn=train_utils.get_model_init_fn(
                 FLAGS.train_logdir,
                 FLAGS.tf_initial_checkpoint,
@@ -178,6 +179,7 @@ class deeplab_base():
                 last_layers,
                 ignore_missing_vars=True)
         sess.run(init_fn)
+        
         epoches=1+FLAGS.training_number_of_steps//len(data_loader)
         print('epoches is',epoches)
         print('step is',len(data_loader))
