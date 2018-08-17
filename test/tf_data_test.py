@@ -18,8 +18,8 @@ class Generator:
             y = 3 + 5 * x
             x, y = np.asarray([x, y], np.float32)
             self.times.append(time())
-#            yield x, y
-            yield tf.convert_to_tensor(x),tf.convert_to_tensor(y)
+            yield x, y
+#            yield tf.convert_to_tensor(x),tf.convert_to_tensor(y)
 
 generator_state1 = Generator()
 

@@ -4,10 +4,11 @@ from deeplab import model
 import tensorflow as tf
 from deeplab.utils import train_utils
 from deeplab.core import feature_extractor
-from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, batch_preprocess_image_and_label
+from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, batch_preprocess_image_and_label, preprocess_image_and_label
 from torch.utils import data as td
 from easydict import EasyDict as edict
 from deeplab.datasets import segmentation_dataset
+import numpy as np
 import six
 
 slim = tf.contrib.slim
@@ -118,7 +119,9 @@ class deeplab_base():
             FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
         optimizer = tf.train.MomentumOptimizer(
             learning_rate, FLAGS.momentum)
-
+        
+        num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
+        ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())
 
@@ -126,13 +129,28 @@ class deeplab_base():
                        FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 3)
         labels_shape = (FLAGS.train_batch_size,
                        FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 1)
-        images = tf.placeholder(
-            dtype=tf.float32, shape=images_shape, name=common.IMAGE)
-        labels = tf.placeholder(
-            dtype=tf.int32, shape=labels_shape, name=common.LABEL)
         
-        num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
-        ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        images_placeholder=[tf.placeholder(
+            dtype=tf.float32, shape=images_shape[1:]) for idx in range(FLAGS.train_batch_size)]
+        labels_placeholder=[tf.placeholder(
+            dtype=tf.int32, shape=labels_shape[1:]) for idx in range(FLAGS.train_batch_size)]
+        
+        images_preprocess=[]
+        labels_preprocess=[]
+        for ip,lp in zip(images_placeholder,labels_placeholder):
+            ppi,ppl=preprocess_image_and_label(ip,lp,FLAGS,ignore_label,is_training=True)
+            images_preprocess.append(ppi)
+            labels_preprocess.append(ppl)
+        
+        images=tf.stack(values=images_preprocess,axis=0,name=common.IMAGE)
+        labels=tf.stack(values=labels_preprocess,axis=0,name=common.LABEL)
+        assert len(images.shape)==4
+        assert len(labels.shape)==4
+#        images = tf.placeholder(
+#            dtype=tf.float32, shape=images_shape, name=common.IMAGE)
+#        labels = tf.placeholder(
+#            dtype=tf.int32, shape=labels_shape, name=common.LABEL)
+        
         outputs_to_scales_to_logits, losses = self._build_model(images, labels, num_classes)
         total_loss=0
         for loss in losses.values():
@@ -142,12 +160,14 @@ class deeplab_base():
 #        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
         for epoch in range(epoches):
             for i, (images, labels, edges) in enumerate(data_loader):
-                tf_images_4d,tf_labels_4d=batch_preprocess_image_and_label(images.numpy(),labels.numpy(),FLAGS,ignore_label,is_training=True)
+#                tf_images_4d,tf_labels_4d=batch_preprocess_image_and_label(images.numpy(),labels.numpy(),FLAGS,ignore_label,is_training=True)
 #                tf_labels_4d = tf.expand_dims(tf_labels_3d, axis=-1)
+#                print(tf_images_4d.shape,tf_labels_4d)
                 
-                print(tf_images_4d.shape,tf_labels_4d)
+                np_images=np.split(images.numpy(),FLAGS.train_batch_size,axis=0)
+                np_labels=np.split(labels.numpy(),FLAGS.train_batch_size,axis=0)
                 sess.run(fetches=[optimizer.minimize(total_loss), total_loss], feed_dict={
-                         images: tf_images_4d, labels: tf_labels_4d})
+                         images_placeholder: np_images, labels_placeholder: np_labels})
             
                 print(dataset_split,i,'*'*50)
 
