@@ -178,7 +178,9 @@ class deeplab_base():
                 FLAGS.initialize_last_layer,
                 last_layers,
                 ignore_missing_vars=True)
-        sess.run(init_fn)
+        
+        if init_fn is not None:
+            sess.run(init_fn)
         
         epoches=1+FLAGS.training_number_of_steps//len(data_loader)
         print('epoches is',epoches)
