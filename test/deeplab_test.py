@@ -168,10 +168,17 @@ flags.DEFINE_string('train_split', 'train',
 
 flags.DEFINE_string('dataset_dir', None, 'Where the dataset reside.')
 
+# train or dump
+flags.DEFINE_boolean('dump', False,
+                     'dump the network.')
+
 
 def main(unused_argv):
     net=deeplab_base(flags=FLAGS)
-    net.train()
+    if FLAGS.dump:
+        net.dump()
+    else:
+        net.train()
 
 if __name__ == '__main__':
 #  flags.mark_flag_as_required('train_logdir')

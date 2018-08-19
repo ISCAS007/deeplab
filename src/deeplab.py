@@ -225,6 +225,43 @@ class deeplab_base():
         data_loader = td.DataLoader(
             dataset=dataset, batch_size=config.batch_size, shuffle=True, drop_last=True, num_workers=8)
         print('step',len(data_loader))
+        
+    def dump(self):
+        FLAGS=self.flags
+        num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
+        ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        images_shape = (FLAGS.train_batch_size,
+                       1024, 2048, 3)
+        labels_shape = (FLAGS.train_batch_size,
+                       1024, 2048, 1)
+        
+        print('image shape is',images_shape)
+        print('label shape is',labels_shape)
+        images_placeholder=[tf.placeholder(
+            dtype=tf.float32, shape=images_shape[1:]) for idx in range(FLAGS.train_batch_size)]
+        labels_placeholder=[tf.placeholder(
+            dtype=tf.int32, shape=labels_shape[1:]) for idx in range(FLAGS.train_batch_size)]
+        placeholders=[]
+        placeholders.extend(images_placeholder)
+        placeholders.extend(labels_placeholder)
+        
+        images_preprocess=[]
+        labels_preprocess=[]
+        for ip,lp in zip(images_placeholder,labels_placeholder):
+            ppi,ppl=preprocess_image_and_label(ip,lp,FLAGS,ignore_label,is_training=True)
+            images_preprocess.append(ppi)
+            labels_preprocess.append(ppl)
+        
+        images=tf.stack(values=images_preprocess,axis=0,name=common.IMAGE)
+        labels=tf.stack(values=labels_preprocess,axis=0,name=common.LABEL)
+        assert len(images.shape)==4
+        assert len(labels.shape)==4
+        print('image shape is',images.shape)
+        print('label shape is',labels.shape)
+        outputs_to_scales_to_logits, losses = self._build_model(images, labels, num_classes)
+        
+        for i in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
+            print(i)  # i.name if you want just a name
 
 def get_extra_layer_scopes(last_layers_contain_logits_only=False):
     """Gets the scopes for extra layers.

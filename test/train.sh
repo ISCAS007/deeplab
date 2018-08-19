@@ -24,4 +24,5 @@ python test/deeplab_test.py \
     --dataset="${dataset}" \
     --tf_initial_checkpoint=${PATH_TO_INITIAL_CHECKPOINT} \
     --train_logdir=${PATH_TO_TRAIN_DIR} \
-    --dataset_dir=${PATH_TO_DATASET}  
+    --dataset_dir=${PATH_TO_DATASET} \
+    --dump=True
