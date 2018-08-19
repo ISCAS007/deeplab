@@ -3,8 +3,8 @@ model_variant=xception_65
 dataset=cityscapes
 CURRENT_PATH=`pwd`
 echo "current path is $CURRENT_PATH"
-#PATH_TO_INITIAL_CHECKPOINT=${CURRENT_PATH}/deeplab/datasets/weights/xception/model.ckpt
-PATH_TO_INITIAL_CHECKPOINT=/home/yzbx/tmp/logs/tensorflow/deeplab/cityscapes/xception_65/2018-08-16__15-30-42/model.ckpt
+PATH_TO_INITIAL_CHECKPOINT=${CURRENT_PATH}/deeplab/datasets/weights/xception/model.ckpt
+#PATH_TO_INITIAL_CHECKPOINT=/home/yzbx/tmp/logs/tensorflow/deeplab/cityscapes/xception_65/2018-08-16__15-30-42/model.ckpt
 PATH_TO_TRAIN_DIR=${HOME}/tmp/logs/tensorflow/deeplab/${dataset}/${model_variant}/${timestr}
 PATH_TO_DATASET=${CURRENT_PATH}/deeplab/datasets/cityscapes/tfrecord
 python test/deeplab_test.py \

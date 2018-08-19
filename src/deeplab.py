@@ -170,6 +170,8 @@ class deeplab_base():
         last_layers = get_extra_layer_scopes(
                 FLAGS.last_layers_contain_logits_only)
         
+        print('last layers is',last_layers)
+        
         sess.run(tf.global_variables_initializer())
 #        sess.run(tf.local_variables_initializer())
         init_fn=train_utils.get_model_init_fn(
@@ -180,12 +182,14 @@ class deeplab_base():
                 ignore_missing_vars=True)
         
         if init_fn is not None:
-            sess.run(init_fn)
+            #sess.run(init_fn)
+            pass
         
         epoches=1+FLAGS.training_number_of_steps//len(data_loader)
         print('epoches is',epoches)
         print('step is',len(data_loader))
 #        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         for epoch in range(epoches):
             for i, (images, labels, edges) in enumerate(data_loader):
 #                tf_images_4d,tf_labels_4d=batch_preprocess_image_and_label(images.numpy(),labels.numpy(),FLAGS,ignore_label,is_training=True)
@@ -200,8 +204,10 @@ class deeplab_base():
                 np_values=[]
                 np_values.extend(np_images)
                 np_values.extend(np_labels)
-                sess.run(fetches=[optimizer.minimize(total_loss), total_loss], feed_dict={
-                         i:d for i,d in zip(placeholders,np_values)})
+                
+                with tf.control_dependencies(update_ops):
+                    sess.run(fetches=[optimizer.minimize(total_loss), total_loss], feed_dict={
+                             i:d for i,d in zip(placeholders,np_values)})
             
                 print(dataset_split,i,'*'*50)
 
