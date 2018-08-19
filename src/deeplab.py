@@ -278,9 +278,11 @@ class deeplab_base():
         optimizer=tf.train.AdamOptimizer()
         train_step=optimizer.minimize(total_loss)
         
+        #logits/semantic/biases/Momentum
         for i in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
-            print(i)  # i.name if you want just a name
-            
+            if i.name.find('logits')>=0:
+                print(i)  # i.name if you want just a name
+        
         print('uninited variables'+'*'*50)
         uninited_var=tf.report_uninitialized_variables(tf.global_variables())
         print(uninited_var)
