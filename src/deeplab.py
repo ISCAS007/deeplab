@@ -178,7 +178,7 @@ class deeplab_base():
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
         sess.run(tf.initialize_variables(list(tf.get_variable(name) for name in sess.run(
-            tf.report_uninitialized_variables(tf.all_variables())))))
+            tf.report_uninitialized_variables(tf.global_variables())))))
 
         init_fn = train_utils.get_model_init_fn(
             FLAGS.train_logdir,
@@ -270,13 +270,20 @@ class deeplab_base():
         print('label shape is', labels.shape)
         outputs_to_scales_to_logits, losses = self._build_model(
             images, labels, num_classes)
+        
+        total_loss = 0
+        for loss in losses.values():
+            total_loss += loss
 
+        optimizer=tf.train.AdamOptimizer()
+        train_step=optimizer.minimize(total_loss)
+        
         for i in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
             print(i)  # i.name if you want just a name
             
         print('uninited variables'+'*'*50)
-        for i in tf.report_uninitialized_variables(tf.all_variables()):
-            print(i)
+        uninited_var=tf.report_uninitialized_variables(tf.global_variables())
+        print(uninited_var)
 
 
 def get_extra_layer_scopes(last_layers_contain_logits_only=False):
