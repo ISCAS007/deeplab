@@ -32,6 +32,7 @@ DATASETS_IGNORE_LABEL = {
     'ade20k': 0,
 }
 
+
 class deeplab_base():
     def __init__(self, flags):
         self.flags = flags
@@ -79,11 +80,11 @@ class deeplab_base():
         output_type_dict[model.MERGED_LOGITS_SCOPE] = tf.identity(
             output_type_dict[model.MERGED_LOGITS_SCOPE],
             name=common.OUTPUT_TYPE)
-        
+
         for output, num_classes in six.iteritems(outputs_to_num_classes):
             for scale, logits in six.iteritems(outputs_to_scales_to_logits[output]):
-                print(output,scale,logits.shape)
-        
+                print(output, scale, logits.shape)
+
         losses = dict()
         for output, num_classes in six.iteritems(outputs_to_num_classes):
             loss = train_utils.add_softmax_cross_entropy_loss_for_each_scale(
@@ -119,97 +120,105 @@ class deeplab_base():
             FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
         optimizer = tf.train.MomentumOptimizer(
             learning_rate, FLAGS.momentum)
-        
-        num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
-        ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+
+        num_classes = DATASETS_CLASS_NUM[FLAGS.dataset]
+        ignore_label = DATASETS_IGNORE_LABEL[FLAGS.dataset]
         # Soft placement allows placing on CPU ops without GPU implementation.
         session_config = tf.ConfigProto(
             allow_soft_placement=True, log_device_placement=False)
 
         sess = tf.Session(config=session_config)
-        
+
 #        images_shape = (FLAGS.train_batch_size,
 #                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 3)
 #        labels_shape = (FLAGS.train_batch_size,
 #                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 1)
-        
+
         images_shape = (FLAGS.train_batch_size,
-                       1024, 2048, 3)
+                        1024, 2048, 3)
         labels_shape = (FLAGS.train_batch_size,
-                       1024, 2048, 1)
-        
-        print('image shape is',images_shape)
-        print('label shape is',labels_shape)
-        images_placeholder=[tf.placeholder(
+                        1024, 2048, 1)
+
+        print('image shape is', images_shape)
+        print('label shape is', labels_shape)
+        images_placeholder = [tf.placeholder(
             dtype=tf.float32, shape=images_shape[1:]) for idx in range(FLAGS.train_batch_size)]
-        labels_placeholder=[tf.placeholder(
+        labels_placeholder = [tf.placeholder(
             dtype=tf.int32, shape=labels_shape[1:]) for idx in range(FLAGS.train_batch_size)]
-        placeholders=[]
+        placeholders = []
         placeholders.extend(images_placeholder)
         placeholders.extend(labels_placeholder)
-        
-        images_preprocess=[]
-        labels_preprocess=[]
-        for ip,lp in zip(images_placeholder,labels_placeholder):
-            ppi,ppl=preprocess_image_and_label(ip,lp,FLAGS,ignore_label,is_training=True)
+
+        images_preprocess = []
+        labels_preprocess = []
+        for ip, lp in zip(images_placeholder, labels_placeholder):
+            ppi, ppl = preprocess_image_and_label(
+                ip, lp, FLAGS, ignore_label, is_training=True)
             images_preprocess.append(ppi)
             labels_preprocess.append(ppl)
-        
-        images=tf.stack(values=images_preprocess,axis=0,name=common.IMAGE)
-        labels=tf.stack(values=labels_preprocess,axis=0,name=common.LABEL)
-        assert len(images.shape)==4
-        assert len(labels.shape)==4
-        print('image shape is',images.shape)
-        print('label shape is',labels.shape)
-        outputs_to_scales_to_logits, losses = self._build_model(images, labels, num_classes)
-        total_loss=0
+
+        images = tf.stack(values=images_preprocess, axis=0, name=common.IMAGE)
+        labels = tf.stack(values=labels_preprocess, axis=0, name=common.LABEL)
+        assert len(images.shape) == 4
+        assert len(labels.shape) == 4
+        print('image shape is', images.shape)
+        print('label shape is', labels.shape)
+        outputs_to_scales_to_logits, losses = self._build_model(
+            images, labels, num_classes)
+        total_loss = 0
         for loss in losses.values():
-            total_loss+=loss
-        
+            total_loss += loss
+
         # Modify the gradients for biases and last layer variables.
         last_layers = get_extra_layer_scopes(
-                FLAGS.last_layers_contain_logits_only)
-        
-        print('last layers is',last_layers)
-        
+            FLAGS.last_layers_contain_logits_only)
+
+        print('last layers is', last_layers)
+
         sess.run(tf.global_variables_initializer())
-#        sess.run(tf.local_variables_initializer())
-        init_fn=train_utils.get_model_init_fn(
-                FLAGS.train_logdir,
-                FLAGS.tf_initial_checkpoint,
-                FLAGS.initialize_last_layer,
-                last_layers,
-                ignore_missing_vars=True)
-        
+        sess.run(tf.local_variables_initializer())
+        sess.run(tf.initialize_variables(list(tf.get_variable(name) for name in sess.run(
+            tf.report_uninitialized_variables(tf.all_variables())))))
+
+        init_fn = train_utils.get_model_init_fn(
+            FLAGS.train_logdir,
+            FLAGS.tf_initial_checkpoint,
+            FLAGS.initialize_last_layer,
+            last_layers,
+            ignore_missing_vars=True)
+
         if init_fn is not None:
-            #sess.run(init_fn)
+            # sess.run(init_fn)
             pass
-        
-        epoches=1+FLAGS.training_number_of_steps//len(data_loader)
-        print('epoches is',epoches)
-        print('step is',len(data_loader))
+
+        epoches = 1+FLAGS.training_number_of_steps//len(data_loader)
+        print('epoches is', epoches)
+        print('step is', len(data_loader))
 #        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         for epoch in range(epoches):
             for i, (images, labels, edges) in enumerate(data_loader):
-#                tf_images_4d,tf_labels_4d=batch_preprocess_image_and_label(images.numpy(),labels.numpy(),FLAGS,ignore_label,is_training=True)
-#                tf_labels_4d = tf.expand_dims(tf_labels_3d, axis=-1)
-#                print(tf_images_4d.shape,tf_labels_4d)
-                
-                np_images=np.split(images.numpy(),FLAGS.train_batch_size,axis=0)
-                np_labels=np.split(labels.numpy(),FLAGS.train_batch_size,axis=0)
-                np_images=[i[0,:,:,:] for i in np_images]
-                np_labels=[np.expand_dims(i[0,:,:],axis=-1) for i in np_labels]
-                
-                np_values=[]
+                #                tf_images_4d,tf_labels_4d=batch_preprocess_image_and_label(images.numpy(),labels.numpy(),FLAGS,ignore_label,is_training=True)
+                #                tf_labels_4d = tf.expand_dims(tf_labels_3d, axis=-1)
+                #                print(tf_images_4d.shape,tf_labels_4d)
+
+                np_images = np.split(
+                    images.numpy(), FLAGS.train_batch_size, axis=0)
+                np_labels = np.split(
+                    labels.numpy(), FLAGS.train_batch_size, axis=0)
+                np_images = [i[0, :, :, :] for i in np_images]
+                np_labels = [np.expand_dims(i[0, :, :], axis=-1)
+                             for i in np_labels]
+
+                np_values = []
                 np_values.extend(np_images)
                 np_values.extend(np_labels)
-                
+
                 with tf.control_dependencies(update_ops):
                     sess.run(fetches=[optimizer.minimize(total_loss), total_loss], feed_dict={
-                             i:d for i,d in zip(placeholders,np_values)})
-            
-                print(dataset_split,i,'*'*50)
+                             i: d for i, d in zip(placeholders, np_values)})
+
+                print(dataset_split, i, '*'*50)
 
     def val(self):
         FLAGS = self.flags
@@ -224,44 +233,51 @@ class deeplab_base():
         dataset = dataset_pipeline(config, img_files, label_files)
         data_loader = td.DataLoader(
             dataset=dataset, batch_size=config.batch_size, shuffle=True, drop_last=True, num_workers=8)
-        print('step',len(data_loader))
-        
+        print('step', len(data_loader))
+
     def dump(self):
-        FLAGS=self.flags
-        num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
-        ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        FLAGS = self.flags
+        num_classes = DATASETS_CLASS_NUM[FLAGS.dataset]
+        ignore_label = DATASETS_IGNORE_LABEL[FLAGS.dataset]
         images_shape = (FLAGS.train_batch_size,
-                       1024, 2048, 3)
+                        1024, 2048, 3)
         labels_shape = (FLAGS.train_batch_size,
-                       1024, 2048, 1)
-        
-        print('image shape is',images_shape)
-        print('label shape is',labels_shape)
-        images_placeholder=[tf.placeholder(
+                        1024, 2048, 1)
+
+        print('image shape is', images_shape)
+        print('label shape is', labels_shape)
+        images_placeholder = [tf.placeholder(
             dtype=tf.float32, shape=images_shape[1:]) for idx in range(FLAGS.train_batch_size)]
-        labels_placeholder=[tf.placeholder(
+        labels_placeholder = [tf.placeholder(
             dtype=tf.int32, shape=labels_shape[1:]) for idx in range(FLAGS.train_batch_size)]
-        placeholders=[]
+        placeholders = []
         placeholders.extend(images_placeholder)
         placeholders.extend(labels_placeholder)
-        
-        images_preprocess=[]
-        labels_preprocess=[]
-        for ip,lp in zip(images_placeholder,labels_placeholder):
-            ppi,ppl=preprocess_image_and_label(ip,lp,FLAGS,ignore_label,is_training=True)
+
+        images_preprocess = []
+        labels_preprocess = []
+        for ip, lp in zip(images_placeholder, labels_placeholder):
+            ppi, ppl = preprocess_image_and_label(
+                ip, lp, FLAGS, ignore_label, is_training=True)
             images_preprocess.append(ppi)
             labels_preprocess.append(ppl)
-        
-        images=tf.stack(values=images_preprocess,axis=0,name=common.IMAGE)
-        labels=tf.stack(values=labels_preprocess,axis=0,name=common.LABEL)
-        assert len(images.shape)==4
-        assert len(labels.shape)==4
-        print('image shape is',images.shape)
-        print('label shape is',labels.shape)
-        outputs_to_scales_to_logits, losses = self._build_model(images, labels, num_classes)
-        
+
+        images = tf.stack(values=images_preprocess, axis=0, name=common.IMAGE)
+        labels = tf.stack(values=labels_preprocess, axis=0, name=common.LABEL)
+        assert len(images.shape) == 4
+        assert len(labels.shape) == 4
+        print('image shape is', images.shape)
+        print('label shape is', labels.shape)
+        outputs_to_scales_to_logits, losses = self._build_model(
+            images, labels, num_classes)
+
         for i in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
             print(i)  # i.name if you want just a name
+            
+        print('uninited variables'+'*'*50)
+        for i in tf.report_uninitialized_variables(tf.all_variables()):
+            print(i)
+
 
 def get_extra_layer_scopes(last_layers_contain_logits_only=False):
     """Gets the scopes for extra layers.
