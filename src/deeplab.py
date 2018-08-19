@@ -291,8 +291,12 @@ class deeplab_base():
             if i.name.find('logits')>=0:
                 print(i)  # i.name if you want just a name
         
-        print('uninited variables'+'*'*50)
+        print('uninited global variables'+'*'*50)
         uninited_var=tf.report_uninitialized_variables(tf.global_variables())
+        print(uninited_var)
+        
+        print('uninited collection variables'+'*'*50)
+        uninited_var=tf.report_uninitialized_variables(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES))
         print(uninited_var)
 
 
