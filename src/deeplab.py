@@ -275,7 +275,15 @@ class deeplab_base():
         for loss in losses.values():
             total_loss += loss
 
-        optimizer=tf.train.AdamOptimizer()
+#        optimizer=tf.train.AdamOptimizer()
+        learning_rate = train_utils.get_model_learning_rate(
+        FLAGS.learning_policy, FLAGS.base_learning_rate,
+        FLAGS.learning_rate_decay_step, FLAGS.learning_rate_decay_factor,
+        FLAGS.training_number_of_steps, FLAGS.learning_power,
+        FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
+        optimizer = tf.train.MomentumOptimizer(
+            learning_rate, FLAGS.momentum)
+        print('momentum',FLAGS.momentum)
         train_step=optimizer.minimize(total_loss)
         
         #logits/semantic/biases/Momentum
