@@ -36,6 +36,7 @@ DATASETS_IGNORE_LABEL = {
 class deeplab_base():
     def __init__(self, flags):
         self.flags = flags
+        self.graph = tf.Graph()
 
     def _build_model(self, images, labels, num_classes):
         """Builds a clone of DeepLab.
@@ -65,39 +66,38 @@ class deeplab_base():
             crop_size=FLAGS.train_crop_size,
             atrous_rates=FLAGS.atrous_rates,
             output_stride=FLAGS.output_stride)
-
-#        with tf.Graph().as_default() as graph:
-        outputs_to_scales_to_logits = multi_scale_logits(
-            images,
-            model_options=model_options,
-            image_pyramid=FLAGS.image_pyramid,
-            weight_decay=FLAGS.weight_decay,
-            is_training=True,
-            fine_tune_batch_norm=FLAGS.fine_tune_batch_norm)
-
-        # Add name to graph node so we can add to summary.
-        output_type_dict = outputs_to_scales_to_logits[common.OUTPUT_TYPE]
-        output_type_dict[model.MERGED_LOGITS_SCOPE] = tf.identity(
-            output_type_dict[model.MERGED_LOGITS_SCOPE],
-            name=common.OUTPUT_TYPE)
-
-        for output, num_classes in six.iteritems(outputs_to_num_classes):
-            for scale, logits in six.iteritems(outputs_to_scales_to_logits[output]):
-                print(output, scale, logits.shape)
-
-        losses = dict()
-        for output, num_classes in six.iteritems(outputs_to_num_classes):
-            loss = train_utils.add_softmax_cross_entropy_loss_for_each_scale(
-                outputs_to_scales_to_logits[output],
-                labels,
-                num_classes,
-                ignore_label,
-                loss_weight=1.0,
-                upsample_logits=FLAGS.upsample_logits,
-                scope=output)
-            losses[output] = loss
-
-        return outputs_to_scales_to_logits, losses
+        with self.graph.as_default():
+            outputs_to_scales_to_logits = multi_scale_logits(
+                images,
+                model_options=model_options,
+                image_pyramid=FLAGS.image_pyramid,
+                weight_decay=FLAGS.weight_decay,
+                is_training=True,
+                fine_tune_batch_norm=FLAGS.fine_tune_batch_norm)
+    
+            # Add name to graph node so we can add to summary.
+            output_type_dict = outputs_to_scales_to_logits[common.OUTPUT_TYPE]
+            output_type_dict[model.MERGED_LOGITS_SCOPE] = tf.identity(
+                output_type_dict[model.MERGED_LOGITS_SCOPE],
+                name=common.OUTPUT_TYPE)
+    
+            for output, num_classes in six.iteritems(outputs_to_num_classes):
+                for scale, logits in six.iteritems(outputs_to_scales_to_logits[output]):
+                    print(output, scale, logits.shape)
+    
+            losses = dict()
+            for output, num_classes in six.iteritems(outputs_to_num_classes):
+                loss = train_utils.add_softmax_cross_entropy_loss_for_each_scale(
+                    outputs_to_scales_to_logits[output],
+                    labels,
+                    num_classes,
+                    ignore_label,
+                    loss_weight=1.0,
+                    upsample_logits=FLAGS.upsample_logits,
+                    scope=output)
+                losses[output] = loss
+    
+            return outputs_to_scales_to_logits, losses
 
     def train(self):
         FLAGS = self.flags
@@ -127,7 +127,7 @@ class deeplab_base():
         session_config = tf.ConfigProto(
             allow_soft_placement=True, log_device_placement=False)
 
-        sess = tf.Session(config=session_config)
+        sess = tf.Session(config=session_config,graph=self.graph)
 
 #        images_shape = (FLAGS.train_batch_size,
 #                       FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 3)
