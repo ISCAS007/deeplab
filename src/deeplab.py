@@ -166,31 +166,33 @@ class deeplab_base():
                 total_loss += loss
     
             # Modify the gradients for biases and last layer variables.
-            last_layers = get_extra_layer_scopes(
-                FLAGS.last_layers_contain_logits_only)
-    
-            print('last layers is', last_layers)
+#            last_layers = get_extra_layer_scopes(
+#                FLAGS.last_layers_contain_logits_only)
+#    
+#            print('last layers is', last_layers)
+#            init_fn = train_utils.get_model_init_fn(
+#                FLAGS.train_logdir,
+#                FLAGS.tf_initial_checkpoint,
+#                FLAGS.initialize_last_layer,
+#                last_layers,
+#                ignore_missing_vars=True)
+#    
+#            if init_fn is not None:
+#                # sess.run(init_fn)
+#                pass
+            
+            train_op=optimizer.minimize(total_loss)
+            init_op=tf.global_variables_initializer()
         
         # Soft placement allows placing on CPU ops without GPU implementation.
         session_config = tf.ConfigProto(
             allow_soft_placement=True, log_device_placement=False)
 
         sess = tf.Session(config=session_config,graph=self.graph)
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        sess.run(tf.initialize_variables(list(tf.get_variable(name) for name in sess.run(
-            tf.report_uninitialized_variables(tf.global_variables())))))
-
-        init_fn = train_utils.get_model_init_fn(
-            FLAGS.train_logdir,
-            FLAGS.tf_initial_checkpoint,
-            FLAGS.initialize_last_layer,
-            last_layers,
-            ignore_missing_vars=True)
-
-        if init_fn is not None:
-            # sess.run(init_fn)
-            pass
+        sess.run(init_op)
+#        sess.run(tf.local_variables_initializer())
+#        sess.run(tf.initialize_variables(list(tf.get_variable(name) for name in sess.run(
+#            tf.report_uninitialized_variables(tf.global_variables())))))
 
         epoches = 1+FLAGS.training_number_of_steps//len(data_loader)
         print('epoches is', epoches)
@@ -216,7 +218,7 @@ class deeplab_base():
                 np_values.extend(np_labels)
 
 #                with tf.control_dependencies(update_ops):
-                sess.run(fetches=[optimizer.minimize(total_loss), total_loss], feed_dict={
+                sess.run(fetches=[train_op, total_loss], feed_dict={
                          i: d for i, d in zip(placeholders, np_values)})
 
                 print(dataset_split, i, '*'*50)
