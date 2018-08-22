@@ -179,6 +179,8 @@ def main(unused_argv):
         net.dump()
     else:
         net.train()
+        
+    net.writer.close()
 
 if __name__ == '__main__':
 #  flags.mark_flag_as_required('train_logdir')

@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 from deeplab import common
-from deeplab import model
+#from deeplab import model
 import tensorflow as tf
 from deeplab.utils import train_utils
 from deeplab.core import feature_extractor
 from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, batch_preprocess_image_and_label, preprocess_image_and_label
 from torch.utils import data as td
 from easydict import EasyDict as edict
-from deeplab.datasets import segmentation_dataset
+from tensorboardX import SummaryWriter
+from tqdm import trange,tqdm
+#from deeplab.datasets import segmentation_dataset
 import numpy as np
+import time
 import six
+import os
 
 slim = tf.contrib.slim
 
@@ -37,6 +41,17 @@ class deeplab_base():
     def __init__(self, flags):
         self.flags = flags
         self.graph = tf.Graph()
+        self.writer = None
+        
+    def init_summary_writer(self):
+        if self.writer is None:
+            time_str = time.strftime("%Y-%m-%d___%H-%M-%S", time.localtime())
+            log_dir=os.path.join(os.path.expanduser('~/tmp/logs/tensorflow'),'deeplab_base',self.flags.dataset,'001',time_str)
+            os.makedirs(log_dir, exist_ok=True)
+            self.writer = SummaryWriter(log_dir=log_dir)
+            config_str = self.flags.flags_into_string().replace(
+                '\n', '\n\n').replace('  ', '\t')
+            self.writer.add_text(tag='config', text_string=config_str)
 
     def _build_model(self, images, labels, num_classes):
         """Builds a clone of DeepLab.
@@ -76,8 +91,8 @@ class deeplab_base():
 
         # Add name to graph node so we can add to summary.
         output_type_dict = outputs_to_scales_to_logits[common.OUTPUT_TYPE]
-        output_type_dict[model.MERGED_LOGITS_SCOPE] = tf.identity(
-            output_type_dict[model.MERGED_LOGITS_SCOPE],
+        output_type_dict[MERGED_LOGITS_SCOPE] = tf.identity(
+            output_type_dict[MERGED_LOGITS_SCOPE],
             name=common.OUTPUT_TYPE)
 
         for output, num_classes in six.iteritems(outputs_to_num_classes):
@@ -99,6 +114,7 @@ class deeplab_base():
         return outputs_to_scales_to_logits, losses
 
     def train(self):
+        self.init_summary_writer()
         FLAGS = self.flags
         dataset_split = 'train'
         img_files, label_files = get_dataset_files(
@@ -161,47 +177,67 @@ class deeplab_base():
             print('label shape is', labels.shape)
             outputs_to_scales_to_logits, losses = self._build_model(
                 images, labels, num_classes)
-            total_loss = 0
-            for loss in losses.values():
-                total_loss += loss
+            total_loss = tf.reduce_mean(losses[common.OUTPUT_TYPE])
+            for key,value in six.iteritems(losses):
+                print('losses key and value',key,type(value))
                 
             #eval
-            predictions = outputs_to_scales_to_logits[common.OUTPUT_TYPE][model.MERGED_LOGITS_SCOPE]
+            all_predictions = {}
+            for output in sorted(outputs_to_scales_to_logits):
+                print('key for outputs_to_scales_to_logits',output)
+                scales_to_logits = outputs_to_scales_to_logits[output]
+                logits = tf.image.resize_bilinear(
+                    scales_to_logits[MERGED_LOGITS_SCOPE],
+                    FLAGS.train_crop_size,
+                    align_corners=True)
+                all_predictions[output] = tf.argmax(logits, 3)
+                
+            predictions = all_predictions[common.OUTPUT_TYPE]
             print('predictions shape',predictions.shape)
             predictions = tf.reshape(predictions, shape=[-1])
             trues = tf.reshape(labels, shape=[-1])
             print('trues shape',trues.shape)
-            weights = tf.to_float(tf.not_equal(labels, dataset.ignore_label))
+            weights = tf.to_float(tf.not_equal(labels, ignore_label))
         
             # Set ignore_label regions to label 0, because metrics.mean_iou requires
             # range of labels = [0, dataset.num_classes). Note the ignore_label regions
             # are not evaluated since the corresponding regions contain weights = 0.
             trues = tf.where(
-                tf.equal(trues, dataset.ignore_label), tf.zeros_like(trues), trues)
-            miou=tf.metrics.mean_iou(predictions, trues, num_classes, weights=weights)
+                tf.equal(trues, ignore_label), tf.zeros_like(trues), trues)
+            # Define the evaluation metric.
+            metric_map = {}
+            metric_map['miou'] = tf.metrics.mean_iou(
+                predictions, trues, num_classes, weights=weights)
+        
+            metrics_to_values, metrics_to_updates = (
+                tf.contrib.metrics.aggregate_metric_map(metric_map))
             
             train_op=optimizer.minimize(total_loss)
-            init_op=tf.global_variables_initializer()
+            global_init_op=tf.global_variables_initializer()
+            local_init_op=tf.local_variables_initializer()
         
         # Soft placement allows placing on CPU ops without GPU implementation.
         session_config = tf.ConfigProto(
             allow_soft_placement=True, log_device_placement=False)
 
         sess = tf.Session(config=session_config,graph=self.graph)
-        sess.run(init_op)
+        sess.run(global_init_op)
+        sess.run(local_init_op)
         
         epoches = 1+FLAGS.training_number_of_steps//len(data_loader)
         print('epoches is', epoches)
         print('step is', len(data_loader))
 #        summaries.add(tf.summary.scalar('learning_rate', learning_rate))
 #        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        for epoch in range(epoches):
-            for i, (images, labels, edges) in enumerate(data_loader):
+        for epoch in trange(epoches,desc='epoches'):
+            loss_list=[]
+            miou_list=[]
+            for i, (torch_images, torch_labels, torch_edges) in enumerate(tqdm(data_loader,desc='step')):
 
                 np_images = np.split(
-                    images.numpy(), FLAGS.train_batch_size, axis=0)
+                    torch_images.numpy(), FLAGS.train_batch_size, axis=0)
                 np_labels = np.split(
-                    labels.numpy(), FLAGS.train_batch_size, axis=0)
+                    torch_labels.numpy(), FLAGS.train_batch_size, axis=0)
                 np_images = [i[0, :, :, :] for i in np_images]
                 np_labels = [np.expand_dims(i[0, :, :], axis=-1)
                              for i in np_labels]
@@ -210,11 +246,20 @@ class deeplab_base():
                 np_values.extend(np_images)
                 np_values.extend(np_labels)
 
-                np_op,np_loss,np_miou=sess.run(fetches=[train_op, total_loss, miou], feed_dict={
+                _,np_loss,np_metrics,np_map,np_predicts,net_input,net_label=sess.run(fetches=[train_op, total_loss, metrics_to_values, metric_map, all_predictions,images,labels], feed_dict={
                          i: d for i, d in zip(placeholders, np_values)})
-    
-                print(type(np_op),type(np_loss),type(np_miou))
-                print(np_loss.shape,np_miou.shape)
+#                <class 'NoneType'> <class 'numpy.float32'> <class 'dict'>
+#                print(type(np_op),type(np_loss),type(np_metrics))
+                print('loss=',np_loss,'total miou=',np_metrics['miou'],'current miou=',np_map['miou'][0])
+#                print('predict label index is',np.unique(np_predicts[common.OUTPUT_TYPE]))
+#                print('net input range in',np.min(net_input),np.max(net_input))
+#                print('net label range in',np.unique(net_label))
+                loss_list.append(np_loss)
+                miou_list.append(np_map['miou'][0])
+            self.writer.add_scalar('%s/loss' % dataset_split,
+                              np.mean(loss_list), epoch)
+            self.writer.add_scalar('%s/miou' % dataset_split,
+                              np.mean(miou_list), epoch)
 
     def val(self):
         FLAGS = self.flags

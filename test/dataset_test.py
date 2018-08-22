@@ -276,19 +276,6 @@ def main(unused_argv):
     
     edge=batch_get_edge(label)
     samples[common.EDGE]=tf.convert_to_tensor(edge,dtype=tf.int32,name=common.EDGE)
-#    samples = input_generator.get(
-#          dataset,
-#          FLAGS.train_crop_size,
-#          clone_batch_size,
-#          min_resize_value=FLAGS.min_resize_value,
-#          max_resize_value=FLAGS.max_resize_value,
-#          resize_factor=FLAGS.resize_factor,
-#          min_scale_factor=FLAGS.min_scale_factor,
-#          max_scale_factor=FLAGS.max_scale_factor,
-#          scale_factor_step_size=FLAGS.scale_factor_step_size,
-#          dataset_split=FLAGS.train_split,
-#          is_training=True,
-#          model_variant=FLAGS.model_variant)
     
 if __name__ == '__main__':
 #    flags.mark_flag_as_required('dataset_dir')

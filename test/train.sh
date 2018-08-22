@@ -9,7 +9,7 @@ PATH_TO_TRAIN_DIR=${HOME}/tmp/logs/tensorflow/deeplab/${dataset}/${model_variant
 PATH_TO_DATASET=${CURRENT_PATH}/deeplab/datasets/cityscapes/tfrecord
 python test/deeplab_test.py \
     --logtostderr \
-    --training_number_of_steps=10 \
+    --training_number_of_steps=90000 \
     --fine_tune_batch_norm=False \
     --train_split="train" \
     --model_variant="${model_variant}" \
@@ -25,4 +25,4 @@ python test/deeplab_test.py \
     --tf_initial_checkpoint=${PATH_TO_INITIAL_CHECKPOINT} \
     --train_logdir=${PATH_TO_TRAIN_DIR} \
     --dataset_dir=${PATH_TO_DATASET} \
-    --dump=True
+    --dump=False
