@@ -164,22 +164,21 @@ class deeplab_base():
             total_loss = 0
             for loss in losses.values():
                 total_loss += loss
-    
-            # Modify the gradients for biases and last layer variables.
-#            last_layers = get_extra_layer_scopes(
-#                FLAGS.last_layers_contain_logits_only)
-#    
-#            print('last layers is', last_layers)
-#            init_fn = train_utils.get_model_init_fn(
-#                FLAGS.train_logdir,
-#                FLAGS.tf_initial_checkpoint,
-#                FLAGS.initialize_last_layer,
-#                last_layers,
-#                ignore_missing_vars=True)
-#    
-#            if init_fn is not None:
-#                # sess.run(init_fn)
-#                pass
+                
+            #eval
+            predictions = outputs_to_scales_to_logits[common.OUTPUT_TYPE][model.MERGED_LOGITS_SCOPE]
+            print('predictions shape',predictions.shape)
+            predictions = tf.reshape(predictions, shape=[-1])
+            trues = tf.reshape(labels, shape=[-1])
+            print('trues shape',trues.shape)
+            weights = tf.to_float(tf.not_equal(labels, dataset.ignore_label))
+        
+            # Set ignore_label regions to label 0, because metrics.mean_iou requires
+            # range of labels = [0, dataset.num_classes). Note the ignore_label regions
+            # are not evaluated since the corresponding regions contain weights = 0.
+            trues = tf.where(
+                tf.equal(trues, dataset.ignore_label), tf.zeros_like(trues), trues)
+            miou=tf.metrics.mean_iou(predictions, trues, num_classes, weights=weights)
             
             train_op=optimizer.minimize(total_loss)
             init_op=tf.global_variables_initializer()
@@ -190,10 +189,7 @@ class deeplab_base():
 
         sess = tf.Session(config=session_config,graph=self.graph)
         sess.run(init_op)
-#        sess.run(tf.local_variables_initializer())
-#        sess.run(tf.initialize_variables(list(tf.get_variable(name) for name in sess.run(
-#            tf.report_uninitialized_variables(tf.global_variables())))))
-
+        
         epoches = 1+FLAGS.training_number_of_steps//len(data_loader)
         print('epoches is', epoches)
         print('step is', len(data_loader))
@@ -201,9 +197,6 @@ class deeplab_base():
 #        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         for epoch in range(epoches):
             for i, (images, labels, edges) in enumerate(data_loader):
-                #                tf_images_4d,tf_labels_4d=batch_preprocess_image_and_label(images.numpy(),labels.numpy(),FLAGS,ignore_label,is_training=True)
-                #                tf_labels_4d = tf.expand_dims(tf_labels_3d, axis=-1)
-                #                print(tf_images_4d.shape,tf_labels_4d)
 
                 np_images = np.split(
                     images.numpy(), FLAGS.train_batch_size, axis=0)
@@ -217,11 +210,11 @@ class deeplab_base():
                 np_values.extend(np_images)
                 np_values.extend(np_labels)
 
-#                with tf.control_dependencies(update_ops):
-                sess.run(fetches=[train_op, total_loss], feed_dict={
+                np_op,np_loss,np_miou=sess.run(fetches=[train_op, total_loss, miou], feed_dict={
                          i: d for i, d in zip(placeholders, np_values)})
-
-                print(dataset_split, i, '*'*50)
+    
+                print(type(np_op),type(np_loss),type(np_miou))
+                print(np_loss.shape,np_miou.shape)
 
     def val(self):
         FLAGS = self.flags
