@@ -112,6 +112,8 @@ class deeplab_edge():
                                 1024, 2048, 3)
                 labels_shape = (FLAGS.train_batch_size,
                                 1024, 2048, 1)
+                edges_shape = (FLAGS.train_batch_size,
+                                1024, 2048, 1)
         
                 print('image shape is', images_shape)
                 print('label shape is', labels_shape)
@@ -119,20 +121,27 @@ class deeplab_edge():
                     dtype=tf.float32, shape=images_shape[1:]) for idx in range(FLAGS.train_batch_size)]
                 labels_placeholder = [tf.placeholder(
                     dtype=tf.int32, shape=labels_shape[1:]) for idx in range(FLAGS.train_batch_size)]
+                edges_placeholder = [tf.placeholder(
+                        dtype=tf.int32, shape=edges_shape[1:]) for idx in range(FLAGS.train_batch_size)]
+    
                 placeholders = []
                 placeholders.extend(images_placeholder)
                 placeholders.extend(labels_placeholder)
         
                 images_preprocess = []
                 labels_preprocess = []
-                for ip, lp in zip(images_placeholder, labels_placeholder):
-                    ppi, ppl = preprocess_image_and_label(
-                        ip, lp, FLAGS, ignore_label, is_training=True)
+                edges_preprocess = []
+                for ip, lp, ep in zip(images_placeholder, labels_placeholder,edges_preprocess):
+                    ppi, ppl, pep = preprocess_image_and_label(
+                        ip, lp, FLAGS, ignore_label, is_training=True, edge)
                     images_preprocess.append(ppi)
                     labels_preprocess.append(ppl)
+                    edges_preprocess.append(pep)
         
                 images = tf.stack(values=images_preprocess, axis=0, name=common.IMAGE)
                 labels = tf.stack(values=labels_preprocess, axis=0, name=common.LABEL)
+                edges = tf.stack(values=edges_preprocess, axis=0, name=common.EDGE)
+                
                 assert len(images.shape) == 4
                 assert len(labels.shape) == 4
                 print('image shape is', images.shape)
@@ -181,6 +190,8 @@ class deeplab_edge():
             # Soft placement allows placing on CPU ops without GPU implementation.
             session_config = tf.ConfigProto(
                 allow_soft_placement=True, log_device_placement=False)
+            
+            session_config.gpu_options.allow_growth = True
     
             self.sess = tf.Session(config=session_config,graph=self.graph)
             self.sess.run(global_init_op)
@@ -222,7 +233,8 @@ class deeplab_edge():
         """
         FLAGS = self.flags
         outputs_to_num_classes = {
-            common.OUTPUT_TYPE: num_classes
+            common.OUTPUT_TYPE: num_classes,
+            common.EDGE: 2
         }
         ignore_label = 255
         model_options = common.ModelOptions(

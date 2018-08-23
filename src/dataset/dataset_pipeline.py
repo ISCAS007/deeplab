@@ -30,10 +30,10 @@ def get_dataset_files(dataset_name,dataset_split):
     
     return img_files,label_files
 
-def preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training=True):
+def preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training=True, tf_edge=None):
     
     crop_size=FLAGS.train_crop_size
-    original_image, image, label = input_preprocess.preprocess_image_and_label(
+    original_image, image, label, edge = input_preprocess.preprocess_image_and_label(
         tf_image,
         tf_label,
         crop_height=crop_size[0],
@@ -46,24 +46,39 @@ def preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training=
         scale_factor_step_size=FLAGS.scale_factor_step_size,
         ignore_label=ignore_label,
         is_training=is_training,
-        model_variant=FLAGS.model_variant)
+        model_variant=FLAGS.model_variant,
+        edge=tf_edge)
     
-    return image,label
+    if edge is None:
+        return image,label
+    else:
+        return image,label,edge
 
-def batch_preprocess_image_and_label(numpy_image_4d,numpy_label_3d,FLAGS,ignore_label,is_training=True):
-    b,h,w,c=numpy_image_4d.shape
-    tf_images=[]
-    tf_labels=[]
-    for idx in range(b):
-        tf_image=tf.convert_to_tensor(numpy_image_4d[idx,:,:,:],dtype=tf.float32)
-        numpy_label_4d=np.expand_dims(numpy_label_3d,axis=-1)
-        tf_label=tf.convert_to_tensor(numpy_label_4d[idx,:,:,:],dtype=tf.int32)
-        
-        pre_tf_image,pre_tf_label=preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training)
-        tf_images.append(pre_tf_image)
-        tf_labels.append(pre_tf_label)
-    
-    return tf.stack(tf_images,name=common.IMAGE),tf.stack(tf_labels,name=common.LABEL)
+#def batch_preprocess_image_and_label(numpy_image_4d,numpy_label_3d,FLAGS,ignore_label,is_training=True,numpy_edge_3d=None):
+#    b,h,w,c=numpy_image_4d.shape
+#    tf_images=[]
+#    tf_labels=[]
+#    tf_edges=[]
+#    numpy_label_4d=np.expand_dims(numpy_label_3d,axis=-1)
+#    if numpy_edge_3d is not None:
+#        numpy_edge_4d=np.expand_dims(numpy_edge_3d,axis=-1)
+#        
+#    for idx in range(b):
+#        tf_image=tf.convert_to_tensor(numpy_image_4d[idx,:,:,:],dtype=tf.float32)
+#        tf_label=tf.convert_to_tensor(numpy_label_4d[idx,:,:,:],dtype=tf.int32)
+#        if numpy_edge_3d is not None:
+#            tf_edge=tf.convert_to_tensor(numpy_edge_4d[idx,:,:,:],dtype=tf.int32)
+#        else:
+#            tf_edge=None
+#        pre_tf_image,pre_tf_label,pre_tf_edge=preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training,tf_edge)
+#        tf_images.append(pre_tf_image)
+#        tf_labels.append(pre_tf_label)
+#        tf_edges.append(pre_tf_edge)
+#    
+#    if numpy_edge_3d is None:
+#        return tf.stack(tf_images,name=common.IMAGE),tf.stack(tf_labels,name=common.LABEL)
+#    else:
+#        return tf.stack(tf_images,name=common.IMAGE),tf.stack(tf_labels,name=common.LABEL),tf.stack(tf_edges,name=common.EDGE)
         
 class dataset_pipeline():
     def __init__(self,config,image_files,label_files):

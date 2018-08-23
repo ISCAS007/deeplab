@@ -109,7 +109,10 @@ ignore_label=255
 - [ ] pipeline for image/edge/segmentation
 - [ ] pipeline for train/val/test
 - [ ] add edge support
+    - [ ] ignore_label for edge
 - [ ] add global/branch support
+- [ ] image_pyramid (default=None)
+- [ ] upsample_logits (default=True)
 
 # running demo
 - sh test/train.sh
