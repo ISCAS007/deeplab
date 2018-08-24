@@ -134,13 +134,13 @@ flags.DEFINE_integer('output_stride', 16,
                      'The ratio of input to output spatial resolution.')
 
 # Dataset settings.
-flags.DEFINE_string('dataset', 'pascal_voc_seg', ['pascal_voc_seg','cityscapes'],
+flags.DEFINE_enum('dataset', 'pascal_voc_seg', ['pascal_voc_seg','cityscapes'],
                     'Name of the segmentation dataset.')
 
 flags.DEFINE_string('train_split', 'train',
                     'Which split of the dataset to be used for training')
 
-#flags.DEFINE_string('dataset_dir', None, 'Where the dataset reside.')
+flags.DEFINE_string('dataset_dir', None, 'Where the dataset reside.')
 
 # others
 flags.DEFINE_boolean('dump', False,

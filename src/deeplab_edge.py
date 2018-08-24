@@ -9,9 +9,10 @@ from tensorboardX import SummaryWriter
 from tqdm import trange,tqdm
 import six
 import numpy as np
-from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, batch_preprocess_image_and_label, preprocess_image_and_label
+from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, preprocess_image_and_label
 from torch.utils import data as td
 from easydict import EasyDict as edict
+slim=tf.contrib.slim
 
 LOGITS_SCOPE_NAME = 'logits'
 MERGED_LOGITS_SCOPE = 'merged_logits'
@@ -34,11 +35,13 @@ DATASETS_IGNORE_LABEL = {
 
 class deeplab_edge():
     def __init__(self,flags):
+        self.name=self.__class__.__name__
         self.flags=flags
         self.graph=tf.Graph()
         self.writer=None
         self.data_loader=None
-        self.ready_to_run()
+        self.sess=None
+        self.init_session()
         
     def run(self):
         self.init_summary_writer()
@@ -48,7 +51,9 @@ class deeplab_edge():
         
         epoches = 1+FLAGS.training_number_of_steps//len(self.data_loader)
         for epoch in trange(epoches,desc='epoches'):
-            loss_list=[]
+            loss_list=dict()
+            for key in [common.OUTPUT_TYPE,common.EDGE,'total']:
+                loss_list[key]=[]
             miou_list=[]
             for i, (torch_images, torch_labels, torch_edges) in enumerate(tqdm(self.data_loader,desc='step')):
                 np_images = np.split(
@@ -58,23 +63,49 @@ class deeplab_edge():
                 np_images = [i[0, :, :, :] for i in np_images]
                 np_labels = [np.expand_dims(i[0, :, :], axis=-1)
                              for i in np_labels]
-
+                np_edges=np.split(torch_edges.numpy(),
+                                  FLAGS.train_batch_size,
+                                  axis=0)
+                np_edges = [np.expand_dims(i[0,:,:], axis=-1)
+                            for i in np_edges]
                 np_values = []
                 np_values.extend(np_images)
                 np_values.extend(np_labels)
+                np_values.extend(np_edges)
 
-                _,np_loss,np_map=self.sess.run(fetches=self.fetches, feed_dict={
+                np_fetches=self.sess.run(fetches=self.fetches, feed_dict={
                          i: d for i, d in zip(self.placeholders, np_values)})
 #                <class 'NoneType'> <class 'numpy.float32'> <class 'dict'>
 #                print(type(np_op),type(np_loss),type(np_metrics))
-                print('loss=',np_loss,'miou=',np_map['miou'][0])
+                np_loss=np_fetches['loss']
+                np_map=np_fetches['metrics']
+                print('seg_loss=',np_loss[common.OUTPUT_TYPE],
+                      'edge_loss=',np_loss[common.EDGE],
+                      'miou=',np_map['miou'][0])
 #                print('predict label index is',np.unique(np_predicts[common.OUTPUT_TYPE]))
 #                print('net input range in',np.min(net_input),np.max(net_input))
 #                print('net label range in',np.unique(net_label))
-                loss_list.append(np_loss)
+                loss_list[common.OUTPUT_TYPE].append(np_loss[common.OUTPUT_TYPE])
+                loss_list[common.EDGE].append(np_loss[common.EDGE])
+                loss_list['total'].append(np_loss['total'])
                 miou_list.append(np_map['miou'][0])
-            self.writer.add_scalar('%s/loss' % dataset_split,
-                              np.mean(loss_list), epoch)
+                
+                step=i+epoch*len(self.data_loader)
+                self.writer.add_scalar('%s_step/seg_loss' % dataset_split,
+                              np.mean(loss_list[common.OUTPUT_TYPE]), step)
+                self.writer.add_scalar('%s_step/edge_loss' % dataset_split,
+                                  np.mean(loss_list[common.EDGE]), step)
+                self.writer.add_scalar('%s_step/total_loss' % dataset_split,
+                                  np.mean(loss_list['total']), step)
+                self.writer.add_scalar('%s_step/miou' % dataset_split,
+                                  np.mean(miou_list), step)
+                
+            self.writer.add_scalar('%s/seg_loss' % dataset_split,
+                              np.mean(loss_list[common.OUTPUT_TYPE]), epoch)
+            self.writer.add_scalar('%s/edge_loss' % dataset_split,
+                              np.mean(loss_list[common.EDGE]), epoch)
+            self.writer.add_scalar('%s/total_loss' % dataset_split,
+                              np.mean(loss_list['total']), epoch)
             self.writer.add_scalar('%s/miou' % dataset_split,
                               np.mean(miou_list), epoch)
     
@@ -123,35 +154,51 @@ class deeplab_edge():
                     dtype=tf.int32, shape=labels_shape[1:]) for idx in range(FLAGS.train_batch_size)]
                 edges_placeholder = [tf.placeholder(
                         dtype=tf.int32, shape=edges_shape[1:]) for idx in range(FLAGS.train_batch_size)]
-    
+                
+                print('placeholder length',len(images_placeholder),len(labels_placeholder),len(edges_placeholder))
                 placeholders = []
                 placeholders.extend(images_placeholder)
                 placeholders.extend(labels_placeholder)
+                placeholders.extend(edges_placeholder)
         
                 images_preprocess = []
                 labels_preprocess = []
                 edges_preprocess = []
-                for ip, lp, ep in zip(images_placeholder, labels_placeholder,edges_preprocess):
+                for ip, lp, ep in zip(images_placeholder, labels_placeholder,edges_placeholder):
+#                    print('placeholder shape',ip.shape,lp.shape,ep.shape)
                     ppi, ppl, pep = preprocess_image_and_label(
-                        ip, lp, FLAGS, ignore_label, is_training=True, edge)
+                        ip, lp, FLAGS, ignore_label, is_training=True, tf_edge=ep)
+                    
+#                    print('preprocess shape',ppi.shape,ppl.shape,pep.shape)
                     images_preprocess.append(ppi)
                     labels_preprocess.append(ppl)
                     edges_preprocess.append(pep)
-        
+                
+                print('preprocess shape',len(images_preprocess),len(labels_preprocess),len(edges_preprocess))
                 images = tf.stack(values=images_preprocess, axis=0, name=common.IMAGE)
                 labels = tf.stack(values=labels_preprocess, axis=0, name=common.LABEL)
                 edges = tf.stack(values=edges_preprocess, axis=0, name=common.EDGE)
                 
-                assert len(images.shape) == 4
-                assert len(labels.shape) == 4
-                print('image shape is', images.shape)
-                print('label shape is', labels.shape)
+#                images.set_shape([FLAGS.train_batch_size, None, None, 3])
+#                labels.set_shape([FLAGS.train_batch_size, None, None, 1])
+#                edges.set_shape([FLAGS.train_batch_size, None, None, 1])
+#                print('image shape is', images.shape)
+#                print('label shape is', labels.shape)
+#                print('edges shape is', edges.shape)
+#                assert len(images.shape) == 4
+#                assert len(labels.shape) == 4
+#                assert len(edges.shape) == 4
+                
                 outputs_to_scales_to_logits, losses = self._build_model(
-                    images, labels, num_classes)
-                total_loss = tf.reduce_mean(losses[common.OUTPUT_TYPE])
+                    images, labels, edges, num_classes)
+                
                 for key,value in six.iteritems(losses):
                     print('losses key and value',key,type(value))
-                    
+                sum_loss=dict()
+                sum_loss[common.OUTPUT_TYPE] = tf.reduce_mean(losses[common.OUTPUT_TYPE])
+                sum_loss[common.EDGE] = tf.reduce_mean(losses[common.EDGE])
+                sum_loss['total'] = 0.8*sum_loss[common.OUTPUT_TYPE]+0.2*sum_loss[common.EDGE]
+                
                 #eval
                 all_predictions = {}
                 for output in sorted(outputs_to_scales_to_logits):
@@ -183,7 +230,7 @@ class deeplab_edge():
                 metrics_to_values, metrics_to_updates = (
                     tf.contrib.metrics.aggregate_metric_map(metric_map))
                 
-                train_op=optimizer.minimize(total_loss)
+                train_op=optimizer.minimize(sum_loss['total'])
                 global_init_op=tf.global_variables_initializer()
                 local_init_op=tf.local_variables_initializer()
             
@@ -198,7 +245,7 @@ class deeplab_edge():
             self.sess.run(local_init_op)
             
             self.fetches={'train_op':train_op, 
-                          'loss':total_loss, 
+                          'loss':sum_loss, 
                           'metrics':metric_map}
             
             self.placeholders=placeholders
@@ -206,14 +253,14 @@ class deeplab_edge():
     def init_summary_writer(self):
         if self.writer is None:
             time_str = time.strftime("%Y-%m-%d___%H-%M-%S", time.localtime())
-            log_dir=os.path.join(os.path.expanduser('~/tmp/logs/tensorflow'),'deeplab_base',self.flags.dataset,'001',time_str)
+            log_dir=os.path.join(os.path.expanduser('~/tmp/logs/tensorflow'),self.name,self.flags.dataset,'001',time_str)
             os.makedirs(log_dir, exist_ok=True)
             self.writer = SummaryWriter(log_dir=log_dir)
             config_str = self.flags.flags_into_string().replace(
                 '\n', '\n\n').replace('  ', '\t')
             self.writer.add_text(tag='config', text_string=config_str)
     
-    def _build_model(self, images, labels, num_classes):
+    def _build_model(self, images, labels, edges, num_classes):
         """Builds a clone of DeepLab.
 
         Args:
@@ -261,11 +308,15 @@ class deeplab_edge():
                 print(output, scale, logits.shape)
 
         losses = dict()
+        trues=dict()
+        trues[common.OUTPUT_TYPE]=labels
+        trues[common.EDGE]=edges
+        
         for output, num_classes in six.iteritems(outputs_to_num_classes):
             loss = train_utils.add_softmax_cross_entropy_loss_for_each_scale(
                 outputs_to_scales_to_logits[output],
-                labels,
-                num_classes,
+                trues[output],
+                outputs_to_num_classes[output],
                 ignore_label,
                 loss_weight=1.0,
                 upsample_logits=FLAGS.upsample_logits,

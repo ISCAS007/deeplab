@@ -115,4 +115,5 @@ ignore_label=255
 - [ ] upsample_logits (default=True)
 
 # running demo
-- sh test/train.sh
+- ```sh test/train.sh```
+- ```python src/run.py --logtostderr --training_number_of_steps=90000 --fine_tune_batch_norm=False --train_split=train --model_variant=xception_65 --atrous_rates=6 --atrous_rates=12 --atrous_rates=18 --output_stride=16 --decoder_output_stride=4 --train_crop_size=769 --train_crop_size=769 --train_batch_size=2 --dataset=cityscapes```

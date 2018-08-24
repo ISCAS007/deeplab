@@ -31,6 +31,8 @@ def get_dataset_files(dataset_name,dataset_split):
     return img_files,label_files
 
 def preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training=True, tf_edge=None):
+#    print('tf_image shape',tf_image.shape)
+#    print('tf_label shape',tf_label.shape)
     
     crop_size=FLAGS.train_crop_size
     original_image, image, label, edge = input_preprocess.preprocess_image_and_label(
@@ -49,9 +51,12 @@ def preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training=
         model_variant=FLAGS.model_variant,
         edge=tf_edge)
     
-    if edge is None:
+    if tf_edge is None:
         return image,label
     else:
+#        print('image shape',image.shape)
+#        print('labe shape',label.shape)
+#        print('edge shape',edge.shape)
         return image,label,edge
 
 #def batch_preprocess_image_and_label(numpy_image_4d,numpy_label_3d,FLAGS,ignore_label,is_training=True,numpy_edge_3d=None):

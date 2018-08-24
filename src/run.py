@@ -5,11 +5,12 @@ run model
 
 import tensorflow as tf
 from deeplab import common
-from src.utils import config
+from src.deeplab_edge import deeplab_edge
+from src.utils import tf_config
 import os
 
 def main(unused_argv):
-    flags=config.FLAGS
+    flags=tf_config.FLAGS
     print(flags.flags_into_string())
     
     if flags.model_variant=='xception_65':
@@ -19,7 +20,9 @@ def main(unused_argv):
         flags.dataset_dir=None
     else:
         assert False,'unknown model variant %s'%flags.model_variant
-        
+    
+    net=deeplab_edge(flags)
+    net.run()        
 
 if __name__ == '__main__':
   tf.app.run()
