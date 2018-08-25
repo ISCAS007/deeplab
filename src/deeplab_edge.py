@@ -92,13 +92,15 @@ class deeplab_edge():
                 
                 step=i+epoch*len(self.data_loader)
                 self.writer.add_scalar('%s_step/seg_loss' % dataset_split,
-                              np.mean(loss_list[common.OUTPUT_TYPE]), step)
+                              np_loss[common.OUTPUT_TYPE], step)
                 self.writer.add_scalar('%s_step/edge_loss' % dataset_split,
-                                  np.mean(loss_list[common.EDGE]), step)
+                                  np_loss[common.EDGE], step)
                 self.writer.add_scalar('%s_step/total_loss' % dataset_split,
-                                  np.mean(loss_list['total']), step)
+                                  np_loss['total'], step)
                 self.writer.add_scalar('%s_step/miou' % dataset_split,
-                                  np.mean(miou_list), step)
+                                  np_map['miou'][0], step)
+                self.writer.add_scalar('%s_step/acc' % dataset_split,
+                                       np_map['acc'][0])
                 
             self.writer.add_scalar('%s/seg_loss' % dataset_split,
                               np.mean(loss_list[common.OUTPUT_TYPE]), epoch)
@@ -225,7 +227,8 @@ class deeplab_edge():
                 # Define the evaluation metric.
                 metric_map = {}
                 metric_map['miou'] = tf.metrics.mean_iou(
-                    predictions, trues, num_classes, weights=weights)
+                labels=trues, predictions=predictions, num_classes=num_classes, weights=weights)
+                metric_map['acc'] = tf.metrics.accuracy(labels=trues,predictions=predictions,weights=tf.reshape(weights,shape=[-1]))
             
                 metrics_to_values, metrics_to_updates = (
                     tf.contrib.metrics.aggregate_metric_map(metric_map))

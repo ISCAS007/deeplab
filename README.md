@@ -106,10 +106,10 @@ ignore_label=255
 # change to official code
 - [x] remove init_fn
 - [x] load data from image file, not tfrecords
-- [ ] pipeline for image/edge/segmentation
+- [x] pipeline for image/edge/segmentation
 - [ ] pipeline for train/val/test
 - [ ] add edge support
-    - [ ] ignore_label for edge
+    - [ ] ~ignore_label for edge~
 - [ ] add global/branch support
 - [ ] image_pyramid (default=None)
 - [ ] upsample_logits (default=True)

@@ -26,7 +26,7 @@ from deeplab.utils import input_generator
 from deeplab.utils import train_utils
 from deployment import model_deploy
 from src.utils.disc import tf_batch_get_edge
-from src.deeplab import deeplab_base
+from src.deeplab_base import deeplab_base
 
 slim = tf.contrib.slim
 

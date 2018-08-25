@@ -4,7 +4,7 @@ from deeplab import common
 import tensorflow as tf
 from deeplab.utils import train_utils
 from deeplab.core import feature_extractor
-from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, batch_preprocess_image_and_label, preprocess_image_and_label
+from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, preprocess_image_and_label
 from torch.utils import data as td
 from easydict import EasyDict as edict
 from tensorboardX import SummaryWriter
@@ -207,7 +207,8 @@ class deeplab_base():
             # Define the evaluation metric.
             metric_map = {}
             metric_map['miou'] = tf.metrics.mean_iou(
-                predictions, trues, num_classes, weights=weights)
+                labels=trues, predictions=predictions, num_classes=num_classes, weights=weights)
+            metric_map['acc'] = tf.metrics.accuracy(labels=trues,predictions=predictions,weights=tf.reshape(weights,shape=[-1]))
         
             metrics_to_values, metrics_to_updates = (
                 tf.contrib.metrics.aggregate_metric_map(metric_map))
@@ -232,6 +233,7 @@ class deeplab_base():
         for epoch in trange(epoches,desc='epoches'):
             loss_list=[]
             miou_list=[]
+            acc_list=[]
             for i, (torch_images, torch_labels, torch_edges) in enumerate(tqdm(data_loader,desc='step')):
 
                 np_images = np.split(
@@ -251,15 +253,19 @@ class deeplab_base():
 #                <class 'NoneType'> <class 'numpy.float32'> <class 'dict'>
 #                print(type(np_op),type(np_loss),type(np_metrics))
                 print('loss=',np_loss,'total miou=',np_metrics['miou'],'current miou=',np_map['miou'][0])
+                print('total acc=',np_metrics['acc'],'current acc=',np_map['acc'][0])
 #                print('predict label index is',np.unique(np_predicts[common.OUTPUT_TYPE]))
 #                print('net input range in',np.min(net_input),np.max(net_input))
 #                print('net label range in',np.unique(net_label))
                 loss_list.append(np_loss)
                 miou_list.append(np_map['miou'][0])
+                acc_list.append(np_map['acc'][0])
             self.writer.add_scalar('%s/loss' % dataset_split,
                               np.mean(loss_list), epoch)
             self.writer.add_scalar('%s/miou' % dataset_split,
                               np.mean(miou_list), epoch)
+            self.writer.add_scalar('%s/acc' % dataset_split,
+                                   np.mean(acc_list), epoch)
 
     def val(self):
         FLAGS = self.flags
