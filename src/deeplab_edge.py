@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import time
 import os
+import torch
 import tensorflow as tf
 from deeplab import common
 from deeplab.utils import train_utils
@@ -79,9 +80,12 @@ class deeplab_edge():
 #                print(type(np_op),type(np_loss),type(np_metrics))
                 np_loss=np_fetches['loss']
                 np_map=np_fetches['metrics']
-                print('seg_loss=',np_loss[common.OUTPUT_TYPE],
-                      'edge_loss=',np_loss[common.EDGE],
-                      'miou=',np_map['miou'][0])
+                np_images=np_fetches['images']
+                print_str=' '.join(['seg_loss=%0.3f'%np_loss[common.OUTPUT_TYPE],
+                      'edge_loss=%0.3f'%np_loss[common.EDGE],
+                      'miou=%0.3f'%np_map['miou'][0],
+                      'acc=%0.3f'%np_map['acc'][0]])
+                tqdm.write(print_str)
 #                print('predict label index is',np.unique(np_predicts[common.OUTPUT_TYPE]))
 #                print('net input range in',np.min(net_input),np.max(net_input))
 #                print('net label range in',np.unique(net_label))
@@ -100,7 +104,7 @@ class deeplab_edge():
                 self.writer.add_scalar('%s_step/miou' % dataset_split,
                                   np_map['miou'][0], step)
                 self.writer.add_scalar('%s_step/acc' % dataset_split,
-                                       np_map['acc'][0])
+                                       np_map['acc'][0], step)
                 
             self.writer.add_scalar('%s/seg_loss' % dataset_split,
                               np.mean(loss_list[common.OUTPUT_TYPE]), epoch)
@@ -110,6 +114,10 @@ class deeplab_edge():
                               np.mean(loss_list['total']), epoch)
             self.writer.add_scalar('%s/miou' % dataset_split,
                               np.mean(miou_list), epoch)
+            
+            self.writer.add_image('%s/images',np_images['images'][0,:,:,:],epoch)
+            self.writer.add_image('%s/trues',torch.from_numpy(np_images['trues'][0,:,:,0]),epoch)
+            self.writer.add_image('%s/predicts',torch.from_numpy(np_images['predicts'][0,:,:,0]),epoch)
     
     def init_data_loader(self,dataset_split):
         FLAGS=self.flags
@@ -184,12 +192,12 @@ class deeplab_edge():
 #                images.set_shape([FLAGS.train_batch_size, None, None, 3])
 #                labels.set_shape([FLAGS.train_batch_size, None, None, 1])
 #                edges.set_shape([FLAGS.train_batch_size, None, None, 1])
-#                print('image shape is', images.shape)
-#                print('label shape is', labels.shape)
-#                print('edges shape is', edges.shape)
-#                assert len(images.shape) == 4
-#                assert len(labels.shape) == 4
-#                assert len(edges.shape) == 4
+                print('image shape is', images.shape)
+                print('label shape is', labels.shape)
+                print('edges shape is', edges.shape)
+                assert len(images.shape) == 4
+                assert len(labels.shape) == 4
+                assert len(edges.shape) == 4
                 
                 outputs_to_scales_to_logits, losses = self._build_model(
                     images, labels, edges, num_classes)
@@ -213,8 +221,16 @@ class deeplab_edge():
                     all_predictions[output] = tf.argmax(logits, 3)
                     
                 predictions = all_predictions[common.OUTPUT_TYPE]
+                pixel_scaling = max(1, 255 // num_classes)
+                summary_images=dict()
+                summary_images['predicts'] = tf.cast(
+                    predictions * pixel_scaling, tf.uint8)
+                summary_images['trues']=tf.cast(labels*pixel_scaling,tf.uint8)
+                summary_images['images']=tf.cast(images,tf.uint8)
                 print('predictions shape',predictions.shape)
                 predictions = tf.reshape(predictions, shape=[-1])
+                
+                
                 trues = tf.reshape(labels, shape=[-1])
                 print('trues shape',trues.shape)
                 weights = tf.to_float(tf.not_equal(labels, ignore_label))
@@ -249,7 +265,8 @@ class deeplab_edge():
             
             self.fetches={'train_op':train_op, 
                           'loss':sum_loss, 
-                          'metrics':metric_map}
+                          'metrics':metric_map,
+                          'images':summary_images}
             
             self.placeholders=placeholders
     

@@ -156,5 +156,7 @@ def preprocess_image_and_label(image,
         else:
             processed_image, label, edge, _ = preprocess_utils.flip_dim(
                 [processed_image, label, edge], _PROB_OF_FLIP, dim=1)
-
-    return original_image, processed_image, label, edge
+    if edge is None:
+        return original_image, processed_image, label
+    else:
+        return original_image, processed_image, label, edge

@@ -320,11 +320,38 @@ def main(unused_argv):
             summaries.add(
                 tf.summary.image(
                     'samples/%s' % common.OUTPUT_TYPE, summary_predictions))
+        
+        # Add summaries for miou,acc
+        labels = graph.get_tensor_by_name(
+                ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/'))
+        predictions = graph.get_tensor_by_name(
+                ('%s/%s:0' % (first_clone_scope, common.OUTPUT_TYPE)).strip('/'))
+        predictions = tf.image.resize_bilinear(predictions,tf.shape(labels)[1:3],align_corners=True)
+        
+        labels=tf.reshape(labels,shape=[-1])
+        predictions = tf.reshape(tf.argmax(predictions, 3), shape=[-1])
+        weights = tf.to_float(tf.not_equal(labels, dataset.ignore_label))
 
+        # Set ignore_label regions to label 0, because metrics.mean_iou requires
+        # range of labels = [0, dataset.num_classes). Note the ignore_label regions
+        # are not evaluated since the corresponding regions contain weights = 0.
+        labels = tf.where(
+            tf.equal(labels, dataset.ignore_label), tf.zeros_like(labels), labels)
+
+        # Define the evaluation metric.
+        metric_map = {}
+        metric_map['miou'],_ = tf.metrics.mean_iou(
+            predictions, labels, dataset.num_classes, weights=weights)
+        metric_map['acc'],_ = tf.metrics.accuracy(
+                labels=labels,predictions=predictions,weights=tf.reshape(weights,shape=[-1]))
+        
+        for x in ['miou','acc']:
+            summaries.add(tf.summary.scalar('metrics/%s' %x, metric_map[x]))
+        
         # Add summaries for losses.
         for loss in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
             summaries.add(tf.summary.scalar('losses/%s' % loss.op.name, loss))
-
+        
         # Build the optimizer based on the device specification.
         with tf.device(config.optimizer_device()):
             learning_rate = train_utils.get_model_learning_rate(
