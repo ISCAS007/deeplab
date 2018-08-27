@@ -5,13 +5,14 @@ from tensorflow import data as tfdata
 import numpy as np
 from time import time
 
-num_batches = 1000
+num_batches = 10
 batch_size = 100
+
 
 class Generator:
     def __init__(self):
         self.times = []
-    
+
     def __iter__(self):
         while True:
             x = np.random.normal()
@@ -19,12 +20,13 @@ class Generator:
             x, y = np.asarray([x, y], np.float32)
             self.times.append(time())
             yield x, y
-#            yield tf.convert_to_tensor(x),tf.convert_to_tensor(y)
+#            yield tf.convert_to_tensor(x,dtype=tf.float16),tf.convert_to_tensor(y,dtype=tf.float16)
+
 
 generator_state1 = Generator()
 
 dataset = tfdata.Dataset.from_generator(
-    lambda: generator_state1, 
+    lambda: generator_state1,
     (tf.float32, tf.float32),
     (tf.TensorShape([]), tf.TensorShape([]))
 )
@@ -33,6 +35,11 @@ batches = prefetched.batch(batch_size)
 iterator = batches.make_one_shot_iterator()
 
 x, y = iterator.get_next()
+#x, y = tf.data.Iterator(initializer=Generator(),
+#                        output_types=(tf.float32, tf.float32),
+#                        output_shapes=(tf.TensorShape([]), tf.TensorShape([])),
+#                        output_classes=2)
+print(x.dtype, y.dtype, x.shape, y.shape)
 
 w = tf.Variable([0, 0], dtype=tf.float32)
 prediction = w[0] + w[1] * x
@@ -50,5 +57,5 @@ start = time()
 for _ in range(num_batches):
     _, _loss = session.run([train_op, loss])
     losses.append(_loss)
-    print('loss is',_loss)
+    print('loss is', _loss)
 time() - start  # about seven seconds

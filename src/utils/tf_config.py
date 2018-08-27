@@ -142,6 +142,42 @@ flags.DEFINE_string('train_split', 'train',
 
 flags.DEFINE_string('dataset_dir', None, 'Where the dataset reside.')
 
-# others
+############################################################################### eval
+# Settings for log directories.
+
+flags.DEFINE_string('eval_logdir', None, 'Where to write the event logs.')
+
+flags.DEFINE_string('checkpoint_dir', None, 'Directory of model checkpoints.')
+
+# Settings for evaluating the model.
+
+flags.DEFINE_integer('eval_batch_size', 1,
+                     'The number of images in each batch during evaluation.')
+
+flags.DEFINE_multi_integer('eval_crop_size', [513, 513],
+                           'Image crop size [height, width] for evaluation.')
+
+flags.DEFINE_integer('eval_interval_secs', 60 * 5,
+                     'How often (in seconds) to run evaluation.')
+
+# Change to [0.5, 0.75, 1.0, 1.25, 1.5, 1.75] for multi-scale test.
+flags.DEFINE_multi_float('eval_scales', [1.0],
+                         'The scales to resize images for evaluation.')
+
+# Change to True for adding flipped images during test.
+flags.DEFINE_bool('add_flipped_images', False,
+                  'Add flipped images for evaluation or not.')
+
+
+flags.DEFINE_string('eval_split', 'val',
+                    'Which split of the dataset used for evaluation')
+
+flags.DEFINE_integer('max_number_of_evaluations', 0,
+                     'Maximum number of eval iterations. Will loop '
+                     'indefinitely upon nonpositive values.')
+
+############################################################################### others
 flags.DEFINE_boolean('dump', False,
                      'dump the network.')
+flags.DEFINE_enum('app', 'train', ['train', 'eval'],
+                  'application to run')

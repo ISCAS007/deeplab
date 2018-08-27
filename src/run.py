@@ -22,7 +22,11 @@ def main(unused_argv):
         assert False,'unknown model variant %s'%flags.model_variant
     
     net=deeplab_edge(flags)
-    net.run()        
+    
+    if flags.app=='train':
+        net.train()
+    elif flags.app=='eval':
+        net.eval()
 
 if __name__ == '__main__':
   tf.app.run()
