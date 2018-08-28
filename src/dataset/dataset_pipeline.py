@@ -58,40 +58,18 @@ def preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training=
 #        print('labe shape',label.shape)
 #        print('edge shape',edge.shape)
         return image,label,edge
-
-#def batch_preprocess_image_and_label(numpy_image_4d,numpy_label_3d,FLAGS,ignore_label,is_training=True,numpy_edge_3d=None):
-#    b,h,w,c=numpy_image_4d.shape
-#    tf_images=[]
-#    tf_labels=[]
-#    tf_edges=[]
-#    numpy_label_4d=np.expand_dims(numpy_label_3d,axis=-1)
-#    if numpy_edge_3d is not None:
-#        numpy_edge_4d=np.expand_dims(numpy_edge_3d,axis=-1)
-#        
-#    for idx in range(b):
-#        tf_image=tf.convert_to_tensor(numpy_image_4d[idx,:,:,:],dtype=tf.float32)
-#        tf_label=tf.convert_to_tensor(numpy_label_4d[idx,:,:,:],dtype=tf.int32)
-#        if numpy_edge_3d is not None:
-#            tf_edge=tf.convert_to_tensor(numpy_edge_4d[idx,:,:,:],dtype=tf.int32)
-#        else:
-#            tf_edge=None
-#        pre_tf_image,pre_tf_label,pre_tf_edge=preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training,tf_edge)
-#        tf_images.append(pre_tf_image)
-#        tf_labels.append(pre_tf_label)
-#        tf_edges.append(pre_tf_edge)
-#    
-#    if numpy_edge_3d is None:
-#        return tf.stack(tf_images,name=common.IMAGE),tf.stack(tf_labels,name=common.LABEL)
-#    else:
-#        return tf.stack(tf_images,name=common.IMAGE),tf.stack(tf_labels,name=common.LABEL),tf.stack(tf_edges,name=common.EDGE)
         
 class dataset_pipeline():
-    def __init__(self,config,image_files,label_files):
-        self.config=config
-        self.num_threads=config.num_threads
-        self.batch_size=config.batch_size
-        self.edge_width=config.edge_width
+    def __init__(self,config,image_files,label_files,is_train=False):
+#        self.config=config
+#        self.num_threads=config.num_threads
+#        self.batch_size=config.batch_size
+        if isinstance(config,edict):
+            self.edge_width=config.edge_width
+        else:
+            self.edge_width=config
         
+        self.is_train=is_train
         self.image_files=image_files
         self.label_files=label_files
     
@@ -108,11 +86,46 @@ class dataset_pipeline():
         
         return img,label,edge
     
+    def generator(self):
+        """numpy generator
+        img: (height,width,3) 0-255
+        label: (height,width) 0-class_number, ignore_index=255
+        edge: (height,width) 0-1, ignore_index=255
+        img_name: image file name
+        height: image height
+        width: image width
+        """
+        for index in range(len(self.image_files)):
+            img,label,edge = self.__getitem__(index)
+            height,width,_=img.shape
+            yield img,label,edge,self.image_files[index],height,width
+        
+        # when training, do endless loop
+        while self.is_train:
+            for index in range(len(self.image_files)):
+                img,label,edge = self.__getitem__(index)
+                height,width,_=img.shape
+                yield img,label,edge,self.image_files[index],height,width
+            
+    def iterator(self):
+        """tensorflow iterator"""
+        tf_dataset=tf.data.Dataset.from_generator(self.generator,
+                                                  output_types=(tf.float32,tf.float32,tf.float32,tf.string,tf.int32,tf.int32),
+                                                  output_shapes=(tf.TensorShape([None, None,3]), 
+                                                                 tf.TensorShape([None, None]),
+                                                                 tf.TensorShape([None, None]),
+                                                                 tf.TensorShape([]),
+                                                                 tf.TensorShape([]),
+                                                                 tf.TensorShape([])))
+        tf_iterator=tf_dataset.make_one_shot_iterator()
+#        img,seg,edge,img_name=tf_iterator.get_next()
+        return tf_iterator.get_next()
+    
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name",
                         help="dataset name",
-                        choices=['cityscapes','voc'],
+                        choices=['cityscapes','pascal_voc_seg'],
                         default='cityscapes')
     
     parser.add_argument("--dataset_split",

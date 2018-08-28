@@ -179,5 +179,9 @@ flags.DEFINE_integer('max_number_of_evaluations', 0,
 ############################################################################### others
 flags.DEFINE_boolean('dump', False,
                      'dump the network.')
-flags.DEFINE_enum('app', 'train', ['train', 'eval'],
+
+flags.DEFINE_enum('app', 'train', ['train', 'val', 'dump'],
                   'application to run')
+
+flags.DEFINE_enum('net_name','deeplab_edge',['deeplab_edge','deeplab_base'],
+                  'network name, eg: deeplab_edge')

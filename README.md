@@ -118,4 +118,8 @@ ignore_label=255
 - ```sh test/train.sh``` modified data loader
 - ```sh deeplab/local_train.sh``` official deeplab train
 - ```sh deeplab/local_eval.sh``` official deeplab eval
-- ```python src/run.py --logtostderr --training_number_of_steps=90000 --fine_tune_batch_norm=False --train_split=train --model_variant=xception_65 --atrous_rates=6 --atrous_rates=12 --atrous_rates=18 --output_stride=16 --decoder_output_stride=4 --train_crop_size=769 --train_crop_size=769 --train_batch_size=2 --dataset=cityscapes```
+- ```python src/run.py --logtostderr --training_number_of_steps=90000 --fine_tune_batch_norm=False --train_split=train --model_variant=xception_65 --atrous_rates=6 --atrous_rates=12 --atrous_rates=18 --output_stride=16 --decoder_output_stride=4 --train_crop_size=769 --train_crop_size=769 --train_batch_size=2 --dataset=cityscapes --app=train --net_name=deeplab_edge```
+- ```python src/run.py --logtostder --eval_split=val --model_variant=xception_65 --atrous_rates=6 --atrous_rates=12 --atrous_rates=18 --output_stride=16 --decoder_output_stride=4 --eval_crop_size=1025 --eval_crop_size=2049 --eval_batch_size=5 --dataset=cityscapes --checkpoint_dir=/home/yzbx/tmp/logs/tensorflow/deeplab_edge/cityscapes --app=val --net_name=deeplab_edge```
+
+# note
+- set miou weight to None for tf.metric.miou(), miou will drop from 0.59 to 0.55

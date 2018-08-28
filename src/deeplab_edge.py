@@ -16,7 +16,9 @@ import numpy as np
 from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, preprocess_image_and_label
 from torch.utils import data as td
 from easydict import EasyDict as edict
+from deployment import model_deploy
 slim = tf.contrib.slim
+prefetch_queue = slim.prefetch_queue
 
 LOGITS_SCOPE_NAME = 'logits'
 MERGED_LOGITS_SCOPE = 'merged_logits'
@@ -49,19 +51,64 @@ class deeplab_edge():
         self.saver = None
         self.graph = None
 
-    def eval(self):
+    def dump(self):
+        if self.graph is None:
+            self.graph = tf.Graph()
+        self.init_session()
+        
+        print('trainable variable'+'*'*50)
+        for v in tf.trainable_variables():
+            print(v.name,v.shape,v.op)
+            
+        print('global variable'+'*'*50)
+        for v in tf.global_variables():
+            print(v.name,v.shape,v.op,v.trainable)
+            
+        print('local variable'+'*'*50)
+        for v in tf.local_variables():
+            print(v.name,v.shape,v.op,v.trainable)
+        
+        print('graph trainable variables'+'*'*50)
+        print(tf.GraphKeys.TRAINABLE_VARIABLES)
+        print('graph global variables'+'*'*50)
+        print(tf.GraphKeys.GLOBAL_VARIABLES)
+        print('graph local variables'+'*'*50)
+        print(tf.GraphKeys.LOCAL_VARIABLES)
+            
+        print('graph operation'+'*'*50)
+        for v in self.graph.get_operations():
+            if v.name.find('xception')<0 \
+            and v.name.lower().find('gradients')<0:
+#                print(v.name,v.type)
+                for t in v.values():
+                    print(t.name,t.shape)
+        
+    def val(self):
         FLAGS=self.flags
         tf.logging.set_verbosity(tf.logging.INFO)
         # Get dataset-dependent information.
-        dataset = segmentation_dataset.get_dataset(
-            FLAGS.dataset, FLAGS.eval_split, dataset_dir=FLAGS.dataset_dir)
-
+#        dataset = segmentation_dataset.get_dataset(
+#            FLAGS.dataset, FLAGS.eval_split, dataset_dir=FLAGS.dataset_dir)
+        dataset_split='val'
+        edge_width=20
+        img_files,label_files=get_dataset_files(FLAGS.dataset,dataset_split)
+        dataset_pp=dataset_pipeline(edge_width,img_files,label_files,is_train=False)
+        num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
+        ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        num_samples=len(dataset_pp)
+        
+        log_dir = os.path.join(os.path.expanduser(
+            '~/tmp/logs/tensorflow'), self.name, self.flags.dataset, 'eval')
+#        os.makedirs(log_dir, exist_ok=True)
+        FLAGS.eval_logdir=log_dir
+        
         tf.gfile.MakeDirs(FLAGS.eval_logdir)
         tf.logging.info('Evaluating on %s set', FLAGS.eval_split)
 
         with tf.Graph().as_default():
+            data_list=dataset_pp.iterator()
             samples = input_generator.get(
-                dataset,
+                (data_list,ignore_label),
                 FLAGS.eval_crop_size,
                 FLAGS.eval_batch_size,
                 min_resize_value=FLAGS.min_resize_value,
@@ -73,7 +120,7 @@ class deeplab_edge():
 
             model_options = common.ModelOptions(
                 outputs_to_num_classes={
-                    common.OUTPUT_TYPE: dataset.num_classes},
+                    common.OUTPUT_TYPE: num_classes},
                 crop_size=FLAGS.eval_crop_size,
                 atrous_rates=FLAGS.atrous_rates,
                 output_stride=FLAGS.output_stride)
@@ -92,13 +139,13 @@ class deeplab_edge():
             predictions = predictions[common.OUTPUT_TYPE]
             predictions = tf.reshape(predictions, shape=[-1])
             labels = tf.reshape(samples[common.LABEL], shape=[-1])
-            weights = tf.to_float(tf.not_equal(labels, dataset.ignore_label))
+            weights = tf.to_float(tf.not_equal(labels, ignore_label))
 
             # Set ignore_label regions to label 0, because metrics.mean_iou requires
             # range of labels = [0, dataset.num_classes). Note the ignore_label regions
             # are not evaluated since the corresponding regions contain weights = 0.
             labels = tf.where(
-                tf.equal(labels, dataset.ignore_label), tf.zeros_like(labels), labels)
+                tf.equal(labels, ignore_label), tf.zeros_like(labels), labels)
 
             predictions_tag = 'miou'
             for eval_scale in FLAGS.eval_scales:
@@ -109,7 +156,7 @@ class deeplab_edge():
             # Define the evaluation metric.
             metric_map = {}
             metric_map[predictions_tag] = tf.metrics.mean_iou(
-                predictions, labels, dataset.num_classes, weights=weights)
+                predictions, labels, num_classes, weights=weights)
 
             metrics_to_values, metrics_to_updates = (
                 tf.contrib.metrics.aggregate_metric_map(metric_map))
@@ -119,9 +166,9 @@ class deeplab_edge():
                     metric_value, metric_name, print_summary=True)
 
             num_batches = int(
-                math.ceil(dataset.num_samples / float(FLAGS.eval_batch_size)))
+                math.ceil(num_samples / float(FLAGS.eval_batch_size)))
 
-            tf.logging.info('Eval num images %d', dataset.num_samples)
+            tf.logging.info('Eval num images %d', num_samples)
             tf.logging.info('Eval batch size %d and num batch %d',
                             FLAGS.eval_batch_size, num_batches)
 
@@ -136,8 +183,220 @@ class deeplab_edge():
                 eval_op=list(metrics_to_updates.values()),
                 max_number_of_evaluations=num_eval_iters,
                 eval_interval_secs=FLAGS.eval_interval_secs)
-
+    
     def train(self):
+        FLAGS = self.flags
+        dataset_split = 'train'
+        edge_width=20
+        img_files, label_files = get_dataset_files(
+            FLAGS.dataset, dataset_split)
+
+        dataset=edict()
+        dataset_pp=dataset_pipeline(edge_width,img_files,label_files,is_train=True)
+        dataset.num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
+        dataset.ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        dataset.num_samples=len(dataset_pp)
+        
+        tf.logging.set_verbosity(tf.logging.INFO)
+        # Set up deployment (i.e., multi-GPUs and/or multi-replicas).
+        config = model_deploy.DeploymentConfig(
+            num_clones=FLAGS.num_clones,
+            clone_on_cpu=FLAGS.clone_on_cpu,
+            replica_id=FLAGS.task,
+            num_replicas=FLAGS.num_replicas,
+            num_ps_tasks=FLAGS.num_ps_tasks)
+    
+        # Split the batch across GPUs.
+        assert FLAGS.train_batch_size % config.num_clones == 0, (
+            'Training batch size not divisble by number of clones (GPUs).')
+    
+        clone_batch_size = FLAGS.train_batch_size // config.num_clones
+    
+        # Get dataset-dependent information.
+#        dataset = segmentation_dataset.get_dataset(
+#            FLAGS.dataset, FLAGS.train_split, dataset_dir=FLAGS.dataset_dir)
+        
+        FLAGS.train_logdir=os.path.join(FLAGS.train_logdir,self.name,FLAGS.dataset)
+        tf.gfile.MakeDirs(FLAGS.train_logdir)
+        tf.logging.info('Training on %s set', FLAGS.train_split)
+    
+        with tf.Graph().as_default() as graph:
+            with tf.device(config.inputs_device()):
+                data_list=dataset_pp.iterator()
+                samples = input_generator.get(
+                    (data_list,dataset.ignore_label),
+                    FLAGS.train_crop_size,
+                    clone_batch_size,
+                    min_resize_value=FLAGS.min_resize_value,
+                    max_resize_value=FLAGS.max_resize_value,
+                    resize_factor=FLAGS.resize_factor,
+                    min_scale_factor=FLAGS.min_scale_factor,
+                    max_scale_factor=FLAGS.max_scale_factor,
+                    scale_factor_step_size=FLAGS.scale_factor_step_size,
+                    dataset_split=FLAGS.train_split,
+                    is_training=True,
+                    model_variant=FLAGS.model_variant)
+                inputs_queue = prefetch_queue.prefetch_queue(
+                    samples, capacity=128 * config.num_clones)
+    
+            # Create the global step on the device storing the variables.
+            with tf.device(config.variables_device()):
+                global_step = tf.train.get_or_create_global_step()
+    
+                # Define the model and create clones.
+                model_fn = self._build_model
+                model_args = (inputs_queue, {
+                    common.OUTPUT_TYPE: dataset.num_classes,
+                    common.EDGE: 2,
+                }, dataset.ignore_label)
+                clones = model_deploy.create_clones(
+                    config, model_fn, args=model_args)
+    
+                # Gather update_ops from the first clone. These contain, for example,
+                # the updates for the batch_norm variables created by model_fn.
+                first_clone_scope = config.clone_scope(0)
+                update_ops = tf.get_collection(
+                    tf.GraphKeys.UPDATE_OPS, first_clone_scope)
+    
+            # Gather initial summaries.
+            summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
+    
+            # Add summaries for model variables.
+            for model_var in slim.get_model_variables():
+                summaries.add(tf.summary.histogram(model_var.op.name, model_var))
+            
+            label_name=('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/')
+            print('first clone label name is:',label_name)
+                
+            # Add summaries for images, labels, semantic predictions
+            if FLAGS.save_summaries_images:
+                summary_image = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, common.IMAGE)).strip('/'))
+                summaries.add(
+                    tf.summary.image('samples/%s' % common.IMAGE, summary_image))
+                
+                first_clone_label = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/'))
+                
+                # Scale up summary image pixel values for better visualization.
+                pixel_scaling = max(1, 255 // dataset.num_classes)
+                summary_label = tf.cast(
+                    first_clone_label * pixel_scaling, tf.uint8)
+                summaries.add(
+                    tf.summary.image('samples/%s' % common.LABEL, summary_label))
+    
+                first_clone_output = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, common.OUTPUT_TYPE)).strip('/'))
+                predictions = tf.expand_dims(tf.argmax(first_clone_output, 3), -1)
+    
+                summary_predictions = tf.cast(
+                    predictions * pixel_scaling, tf.uint8)
+                summaries.add(
+                    tf.summary.image(
+                        'samples/%s' % common.OUTPUT_TYPE, summary_predictions))
+            
+            # Add summaries for miou,acc
+            labels = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/'))
+            predictions = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, common.OUTPUT_TYPE)).strip('/'))
+            predictions = tf.image.resize_bilinear(predictions,tf.shape(labels)[1:3],align_corners=True)
+            
+            labels=tf.reshape(labels,shape=[-1])
+            predictions = tf.reshape(tf.argmax(predictions, 3), shape=[-1])
+            weights = tf.to_float(tf.not_equal(labels, dataset.ignore_label))
+    
+            # Set ignore_label regions to label 0, because metrics.mean_iou requires
+            # range of labels = [0, dataset.num_classes). Note the ignore_label regions
+            # are not evaluated since the corresponding regions contain weights = 0.
+            labels = tf.where(
+                tf.equal(labels, dataset.ignore_label), tf.zeros_like(labels), labels)
+    
+            # Define the evaluation metric.
+            metric_map = {}
+            metric_map['miou'],_ = tf.metrics.mean_iou(
+                predictions, labels, dataset.num_classes, weights=weights)
+            metric_map['acc'],_ = tf.metrics.accuracy(
+                    labels=labels,predictions=predictions,weights=tf.reshape(weights,shape=[-1]))
+            
+            for x in ['miou','acc']:
+                summaries.add(tf.summary.scalar('metrics/%s' %x, metric_map[x]))
+            
+            # Add summaries for losses.
+            for loss in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
+                summaries.add(tf.summary.scalar('losses/%s' % loss.op.name, loss))
+            
+            # Build the optimizer based on the device specification.
+            with tf.device(config.optimizer_device()):
+                learning_rate = train_utils.get_model_learning_rate(
+                    FLAGS.learning_policy, FLAGS.base_learning_rate,
+                    FLAGS.learning_rate_decay_step, FLAGS.learning_rate_decay_factor,
+                    FLAGS.training_number_of_steps, FLAGS.learning_power,
+                    FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
+                optimizer = tf.train.MomentumOptimizer(
+                    learning_rate, FLAGS.momentum)
+                summaries.add(tf.summary.scalar('learning_rate', learning_rate))
+    
+            startup_delay_steps = FLAGS.task * FLAGS.startup_delay_steps
+            for variable in slim.get_model_variables():
+                summaries.add(tf.summary.histogram(variable.op.name, variable))
+    
+            with tf.device(config.variables_device()):
+                total_loss, grads_and_vars = model_deploy.optimize_clones(
+                    clones, optimizer)
+                total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
+                summaries.add(tf.summary.scalar('total_loss', total_loss))
+    
+                # Modify the gradients for biases and last layer variables.
+                last_layers = get_extra_layer_scopes(
+                    FLAGS.last_layers_contain_logits_only)
+                grad_mult = train_utils.get_model_gradient_multipliers(
+                    last_layers, FLAGS.last_layer_gradient_multiplier)
+                if grad_mult:
+                    grads_and_vars = slim.learning.multiply_gradients(
+                        grads_and_vars, grad_mult)
+    
+                # Create gradient update op.
+                grad_updates = optimizer.apply_gradients(
+                    grads_and_vars, global_step=global_step)
+                update_ops.append(grad_updates)
+                update_op = tf.group(*update_ops)
+                with tf.control_dependencies([update_op]):
+                    train_tensor = tf.identity(total_loss, name='train_op')
+    
+            # Add the summaries from the first clone. These contain the summaries
+            # created by model_fn and either optimize_clones() or _gather_clone_loss().
+            summaries |= set(
+                tf.get_collection(tf.GraphKeys.SUMMARIES, first_clone_scope))
+    
+            # Merge all summaries together.
+            summary_op = tf.summary.merge(list(summaries))
+    
+            # Soft placement allows placing on CPU ops without GPU implementation.
+            session_config = tf.ConfigProto(
+                allow_soft_placement=True, log_device_placement=False)
+    
+            # Start the training.
+            slim.learning.train(
+                train_tensor,
+                logdir=FLAGS.train_logdir,
+                log_every_n_steps=FLAGS.log_steps,
+                master=FLAGS.master,
+                number_of_steps=FLAGS.training_number_of_steps,
+                is_chief=(FLAGS.task == 0),
+                session_config=session_config,
+                startup_delay_steps=startup_delay_steps,
+                init_fn=train_utils.get_model_init_fn(
+                    FLAGS.train_logdir,
+                    FLAGS.tf_initial_checkpoint,
+                    FLAGS.initialize_last_layer,
+                    last_layers,
+                    ignore_missing_vars=True),
+                summary_op=summary_op,
+                save_summaries_secs=FLAGS.save_summaries_secs,
+                save_interval_secs=FLAGS.save_interval_secs)
+        
+    def torch_train(self):
         if self.graph is None:
             self.graph = tf.Graph()
         self.init_session()
@@ -202,28 +461,31 @@ class deeplab_edge():
                                        np_map['miou'][0], step)
                 self.writer.add_scalar('%s_step/acc' % dataset_split,
                                        np_map['acc'][0], step)
-
+                
+                # image summary
+                if i==0:
+                    #np_images predicts shape: (2, 769, 769)
+                    #np_images trues shape: (2, 769, 769, 1)
+                    #np_images images shape: (2, 769, 769, 3)
+                    for key, value in six.iteritems(np_images):
+                        print('np_images %s shape:' % key, value.shape)
+                    self.writer.add_image(
+                        '%s/images' % dataset_split, np_images['images'][0, :, :, :], epoch)
+                    self.writer.add_image(
+                        '%s/trues_semantic' % dataset_split, torch.from_numpy(np_images['trues'][0, :, :, 0]), epoch)
+                    self.writer.add_image('%s/predicts' % dataset_split,
+                                          torch.from_numpy(np_images['predicts'][0, :, :]), epoch)
+                    self.writer.add_image('%s/trues_edge' % dataset_split,
+                                          torch.from_numpy(np_images['edge'][0, :, :, 0]), epoch)
+            
             self.writer.add_scalar('%s/seg_loss' % dataset_split,
-                                   np.mean(loss_list[common.OUTPUT_TYPE]), epoch)
+                               np.mean(loss_list[common.OUTPUT_TYPE]), epoch)
             self.writer.add_scalar('%s/edge_loss' % dataset_split,
                                    np.mean(loss_list[common.EDGE]), epoch)
             self.writer.add_scalar('%s/total_loss' % dataset_split,
                                    np.mean(loss_list['total']), epoch)
             self.writer.add_scalar('%s/miou' % dataset_split,
-                                   np.mean(miou_list), epoch)
-
-#np_images predicts shape: (2, 769, 769)
-#np_images trues shape: (2, 769, 769, 1)
-#np_images images shape: (2, 769, 769, 3)
-
-            for key, value in six.iteritems(np_images):
-                print('np_images %s shape:' % key, value.shape)
-            self.writer.add_image(
-                '%s/images' % dataset_split, np_images['images'][0, :, :, :], epoch)
-            self.writer.add_image(
-                '%s/trues' % dataset_split, torch.from_numpy(np_images['trues'][0, :, :, 0]), epoch)
-            self.writer.add_image('%s/predicts' % dataset_split,
-                                  torch.from_numpy(np_images['predicts'][0, :, :]), epoch)
+                                   np.mean(miou_list), epoch)            
             
             self.saver.save(self.sess,save_path=self.log_dir)
 
@@ -236,7 +498,7 @@ class deeplab_edge():
             config = edict()
             config.num_threads = 4
             config.batch_size = FLAGS.train_batch_size
-            config.edge_width = 5
+            config.edge_width = 20
             dataset = dataset_pipeline(config, img_files, label_files)
             self.data_loader = td.DataLoader(
                 dataset=dataset, batch_size=config.batch_size, shuffle=True, drop_last=True, num_workers=8)
@@ -321,19 +583,21 @@ class deeplab_edge():
                 sum_loss[common.OUTPUT_TYPE] = tf.reduce_mean(
                     losses[common.OUTPUT_TYPE])
                 sum_loss[common.EDGE] = tf.reduce_mean(losses[common.EDGE])
-                sum_loss['total'] = 0.8*sum_loss[common.OUTPUT_TYPE] + \
-                    0.2*sum_loss[common.EDGE]
+                sum_loss['total'] = sum_loss[common.OUTPUT_TYPE] + \
+                    sum_loss[common.EDGE]
 
                 # eval
                 all_predictions = {}
                 for output in sorted(outputs_to_scales_to_logits):
-                    print('key for outputs_to_scales_to_logits', output)
                     scales_to_logits = outputs_to_scales_to_logits[output]
                     logits = tf.image.resize_bilinear(
                         scales_to_logits[MERGED_LOGITS_SCOPE],
                         FLAGS.train_crop_size,
                         align_corners=True)
+                    
+                    print('key for outputs_to_scales_to_logits', output, logits.shape)
                     all_predictions[output] = tf.argmax(logits, 3)
+        
 
                 predictions = all_predictions[common.OUTPUT_TYPE]
                 pixel_scaling = max(1, 255 // num_classes)
@@ -343,6 +607,7 @@ class deeplab_edge():
                 summary_images['trues'] = tf.cast(
                     labels*pixel_scaling, tf.uint8)
                 summary_images['images'] = tf.cast(images, tf.uint8)
+                summary_images['edge'] = tf.cast(edges,tf.uint8)
                 print('predictions shape', predictions.shape)
                 predictions = tf.reshape(predictions, shape=[-1])
 
@@ -399,7 +664,7 @@ class deeplab_edge():
                 '\n', '\n\n').replace('  ', '\t')
             self.writer.add_text(tag='config', text_string=config_str)
 
-    def _build_model(self, images, labels, edges, num_classes):
+    def _build_model(self, inputs_queue, outputs_to_num_classes, ignore_label):
         """Builds a clone of DeepLab.
 
         Args:
@@ -418,18 +683,21 @@ class deeplab_edge():
             'logits_1.50'.
         """
         FLAGS = self.flags
-        outputs_to_num_classes = {
-            common.OUTPUT_TYPE: num_classes,
-            common.EDGE: 2
-        }
-        ignore_label = 255
+        samples = inputs_queue.dequeue()
+    
+        # Add name to input and label nodes so we can add to summary.
+        samples[common.IMAGE] = tf.identity(
+            samples[common.IMAGE], name=common.IMAGE)
+        samples[common.LABEL] = tf.identity(
+            samples[common.LABEL], name=common.LABEL)
+        
         model_options = common.ModelOptions(
             outputs_to_num_classes=outputs_to_num_classes,
             crop_size=FLAGS.train_crop_size,
             atrous_rates=FLAGS.atrous_rates,
             output_stride=FLAGS.output_stride)
         outputs_to_scales_to_logits = multi_scale_logits(
-            images,
+            samples[common.IMAGE],
             model_options=model_options,
             image_pyramid=FLAGS.image_pyramid,
             weight_decay=FLAGS.weight_decay,
@@ -446,21 +714,30 @@ class deeplab_edge():
             for scale, logits in six.iteritems(outputs_to_scales_to_logits[output]):
                 print(output, scale, logits.shape)
 
+        LOSS_WEIGHT={
+            common.OUTPUT_TYPE: 0.8,
+            common.EDGE: 0.2
+        }
+        
+        trues=dict()
+        trues[common.OUTPUT_TYPE]=samples[common.LABEL]
+        trues[common.EDGE]=samples[common.EDGE]
+        
         losses = dict()
-        trues = dict()
-        trues[common.OUTPUT_TYPE] = labels
-        trues[common.EDGE] = edges
-
         for output, num_classes in six.iteritems(outputs_to_num_classes):
             loss = train_utils.add_softmax_cross_entropy_loss_for_each_scale(
                 outputs_to_scales_to_logits[output],
                 trues[output],
                 outputs_to_num_classes[output],
                 ignore_label,
-                loss_weight=1.0,
+                loss_weight=LOSS_WEIGHT[output],
                 upsample_logits=FLAGS.upsample_logits,
                 scope=output)
             losses[output] = loss
+            
+            losses[output] = tf.identity(
+                losses[output],
+                name='losses/'+output)
 
         return outputs_to_scales_to_logits, losses
 

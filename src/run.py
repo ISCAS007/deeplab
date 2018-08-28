@@ -6,6 +6,7 @@ run model
 import tensorflow as tf
 from deeplab import common
 from src.deeplab_edge import deeplab_edge
+from src.deeplab_base import deeplab_base
 from src.utils import tf_config
 import os
 
@@ -17,16 +18,18 @@ def main(unused_argv):
         if flags.tf_initial_checkpoint is None:
             flags.tf_initial_checkpoint='deeplab/datasets/weights/xception/model.ckpt'
         flags.train_logdir=os.path.expanduser('~/tmp/logs/tensorflow')
-        flags.dataset_dir=None
+        flags.dataset_dir='deeplab/datasets/cityscapes/tfrecord'
     else:
         assert False,'unknown model variant %s'%flags.model_variant
     
-    net=deeplab_edge(flags)
+    net=globals()[flags.net_name](flags)
     
     if flags.app=='train':
         net.train()
-    elif flags.app=='eval':
-        net.eval()
+    elif flags.app=='val':
+        net.val()
+    elif flags.app=='dump':
+        net.dump()
 
 if __name__ == '__main__':
   tf.app.run()

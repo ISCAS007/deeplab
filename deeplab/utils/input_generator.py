@@ -113,14 +113,20 @@ def get(dataset,
         tf.logging.warning('Please specify a model_variant. See '
                            'feature_extractor.network_map for supported model '
                            'variants.')
-
-    data_provider = dataset_data_provider.DatasetDataProvider(
-        dataset,
-        num_readers=num_readers,
-        num_epochs=None if is_training else 1,
-        shuffle=is_training)
-    image, label, image_name, height, width = _get_data(data_provider,
-                                                        dataset_split)
+    
+    if isinstance(dataset,(list,tuple)):
+        (image, label, edge, image_name, height, width),ignore_label = dataset 
+    else:
+        data_provider = dataset_data_provider.DatasetDataProvider(
+            dataset,
+            num_readers=num_readers,
+            num_epochs=None if is_training else 1,
+            shuffle=is_training)
+        image, label, image_name, height, width = _get_data(data_provider,
+                                                            dataset_split)
+        edge = None
+        ignore_label=dataset.ignore_label
+    
     if label is not None:
         if label.shape.ndims == 2:
             label = tf.expand_dims(label, 2)
@@ -131,7 +137,18 @@ def get(dataset,
                              '[height, width, 1].')
 
         label.set_shape([None, None, 1])
-    original_image, image, label = input_preprocess.preprocess_image_and_label(
+    
+    if edge is not None:
+        if edge.shape.ndims == 2:
+            edge = tf.expand_dims(edge, 2)
+        elif edge.shape.ndims == 3 and edge.shape.dims[2] == 1:
+            pass
+        else:
+            raise ValueError('Input edge shape must be [height, width], or '
+                             '[height, width, 1].')
+
+        edge.set_shape([None, None, 1])
+    results = input_preprocess.preprocess_image_and_label(
         image,
         label,
         crop_height=crop_size[0],
@@ -142,9 +159,16 @@ def get(dataset,
         min_scale_factor=min_scale_factor,
         max_scale_factor=max_scale_factor,
         scale_factor_step_size=scale_factor_step_size,
-        ignore_label=dataset.ignore_label,
+        ignore_label=ignore_label,
         is_training=is_training,
-        model_variant=model_variant)
+        model_variant=model_variant,
+        edge=edge)
+    
+    if edge is None:
+        original_image, image, label = results
+    else:
+        original_image, image, label, edge = results
+
     sample = {
         common.IMAGE: image,
         common.IMAGE_NAME: image_name,
@@ -153,6 +177,8 @@ def get(dataset,
     }
     if label is not None:
         sample[common.LABEL] = label
+    if edge is not None:
+        sample[common.EDGE] = edge
 
     if not is_training:
         # Original image is only used during visualization.
