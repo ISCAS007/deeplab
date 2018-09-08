@@ -66,8 +66,19 @@ class dataset_pipeline():
 #        self.batch_size=config.batch_size
         if isinstance(config,edict):
             self.edge_width=config.edge_width
+            if hasattr(config,'ignore_label'):
+                self.ignore_label=config.ignore_label
+            else:
+                self.ignore_label=None
+                
+            if hasattr(config,'edge_class_num'):
+                self.edge_class_num=config.edge_class_num
+            else:
+                self.edge_class_num=2
         else:
             self.edge_width=config
+            self.ignore_label=None
+            self.edge_class_num=2
         
         self.is_train=is_train
         self.image_files=image_files
@@ -82,7 +93,7 @@ class dataset_pipeline():
         
         img=cv2.imread(img_file,cv2.IMREAD_COLOR)
         label=cv2.imread(label_file,cv2.IMREAD_GRAYSCALE)
-        edge=get_edge(label,self.edge_width)
+        edge=get_edge(label,self.edge_width,self.edge_class_num,self.ignore_label)
         
         return img,label,edge
     

@@ -97,11 +97,6 @@ class deeplab_edge():
         ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
         num_samples=len(dataset_pp)
         
-        log_dir = os.path.join(os.path.expanduser(
-            '~/tmp/logs/tensorflow'), self.name, self.flags.dataset, 'eval')
-#        os.makedirs(log_dir, exist_ok=True)
-        FLAGS.eval_logdir=log_dir
-        
         tf.gfile.MakeDirs(FLAGS.eval_logdir)
         tf.logging.info('Evaluating on %s set', FLAGS.eval_split)
 
@@ -187,12 +182,15 @@ class deeplab_edge():
     def train(self):
         FLAGS = self.flags
         dataset_split = 'train'
-        edge_width=20
+        data_config=edict()
+        data_config.edge_width=20
+        data_config.ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        data_config.edge_class_num=FLAGS.edge_class_num
         img_files, label_files = get_dataset_files(
             FLAGS.dataset, dataset_split)
 
         dataset=edict()
-        dataset_pp=dataset_pipeline(edge_width,img_files,label_files,is_train=True)
+        dataset_pp=dataset_pipeline(data_config,img_files,label_files,is_train=True)
         dataset.num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
         dataset.ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
         dataset.num_samples=len(dataset_pp)
@@ -216,7 +214,6 @@ class deeplab_edge():
 #        dataset = segmentation_dataset.get_dataset(
 #            FLAGS.dataset, FLAGS.train_split, dataset_dir=FLAGS.dataset_dir)
         
-        FLAGS.train_logdir=os.path.join(FLAGS.train_logdir,self.name,FLAGS.dataset)
         tf.gfile.MakeDirs(FLAGS.train_logdir)
         tf.logging.info('Training on %s set', FLAGS.train_split)
     
@@ -247,7 +244,7 @@ class deeplab_edge():
                 model_fn = self._build_model
                 model_args = (inputs_queue, {
                     common.OUTPUT_TYPE: dataset.num_classes,
-                    common.EDGE: 2,
+                    common.EDGE: FLAGS.edge_class_num,
                 }, dataset.ignore_label)
                 clones = model_deploy.create_clones(
                     config, model_fn, args=model_args)
@@ -314,18 +311,32 @@ class deeplab_edge():
     
             # Define the evaluation metric.
             metric_map = {}
-            metric_map['miou'],_ = tf.metrics.mean_iou(
+            metric_map['miou'] = tf.metrics.mean_iou(
                 predictions, labels, dataset.num_classes, weights=weights)
-            metric_map['acc'],_ = tf.metrics.accuracy(
+            metric_map['acc'] = tf.metrics.accuracy(
                     labels=labels,predictions=predictions,weights=tf.reshape(weights,shape=[-1]))
             
+            tf.identity(metric_map['miou'][1],'miou1')
+            tf.identity(metric_map['acc'][1],'acc1')
+            tf.identity(metric_map['miou'][0],'miou0')
+            tf.identity(metric_map['acc'][0],'acc0')
             for x in ['miou','acc']:
-                summaries.add(tf.summary.scalar('metrics/%s' %x, metric_map[x]))
-            
+                t=tf.identity(metric_map[x][0])
+                op=tf.summary.scalar('metrics/%s' %x, t)
+                summaries.add(op)
+                t_up=tf.identity(metric_map[x][1])
+                op_up=tf.summary.scalar('metrics/update_%s'%x,tf.reduce_mean(t_up))
+                summaries.add(op_up)
+                
             # Add summaries for losses.
             for loss in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
                 summaries.add(tf.summary.scalar('losses/%s' % loss.op.name, loss))
             
+            losses = {}
+            for key in [common.OUTPUT_TYPE,common.EDGE]:
+                losses[key]=graph.get_tensor_by_name(name='losses/%s:0'%key)
+                summaries.add(tf.summary.scalar('losses/'+key,losses[key]))
+                
             # Build the optimizer based on the device specification.
             with tf.device(config.optimizer_device()):
                 learning_rate = train_utils.get_model_learning_rate(
@@ -345,7 +356,7 @@ class deeplab_edge():
                 total_loss, grads_and_vars = model_deploy.optimize_clones(
                     clones, optimizer)
                 total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
-                summaries.add(tf.summary.scalar('total_loss', total_loss))
+                summaries.add(tf.summary.scalar('losses/total_loss', total_loss))
     
                 # Modify the gradients for biases and last layer variables.
                 last_layers = get_extra_layer_scopes(
@@ -368,7 +379,11 @@ class deeplab_edge():
             # created by model_fn and either optimize_clones() or _gather_clone_loss().
             summaries |= set(
                 tf.get_collection(tf.GraphKeys.SUMMARIES, first_clone_scope))
-    
+            
+            config_str = self.flags.flags_into_string().replace(
+                '\n', '\n\n').replace('  ', '\t')
+            tf_config_str=tf.convert_to_tensor(value=config_str,dtype=tf.string)
+            summaries.add(tf.summary.text('config',tf_config_str))
             # Merge all summaries together.
             summary_op = tf.summary.merge(list(summaries))
     

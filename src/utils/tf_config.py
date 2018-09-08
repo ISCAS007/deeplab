@@ -180,8 +180,13 @@ flags.DEFINE_integer('max_number_of_evaluations', 0,
 flags.DEFINE_boolean('dump', False,
                      'dump the network.')
 
+flags.DEFINE_integer('edge_class_num',2,
+                     'class number for edge segmentation')
+
 flags.DEFINE_enum('app', 'train', ['train', 'val', 'dump'],
                   'application to run')
 
 flags.DEFINE_enum('net_name','deeplab_edge',['deeplab_edge','deeplab_base'],
                   'network name, eg: deeplab_edge')
+
+flags.DEFINE_string('note','001','note for tensorboard and logdir')

@@ -108,11 +108,12 @@ ignore_label=255
 - [x] load data from image file, not tfrecords
 - [x] pipeline for image/edge/segmentation
 - [ ] pipeline for train/val/test
-- [ ] add edge support
-    - [ ] ~ignore_label for edge~
+- [x] add edge support
+    - [ ] ignore_label for edge, (edge=0 for semantic edge, edge=1 for dilated semantic edge, otherwise for ignore_label)
 - [ ] add global/branch support
 - [ ] image_pyramid (default=None)
 - [ ] upsample_logits (default=True)
+- [ ]
 
 # running demo
 - ```sh test/train.sh``` modified data loader
