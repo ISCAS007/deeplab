@@ -15,8 +15,11 @@ def main(unused_argv):
     print(flags.flags_into_string())
     
     if flags.model_variant=='xception_65':
-        if flags.tf_initial_checkpoint is None:
+        if flags.tf_initial_checkpoint in [None,'xception']:
             flags.tf_initial_checkpoint='deeplab/datasets/weights/xception/model.ckpt'
+        elif flags.tf_initial_checkpoint in ['pascal_train_aug','voc','pascal_voc']:
+            flags.tf_initial_checkpoint='deeplab/datasets/weights/deeplabv3_pascal_train_aug/model.ckpt'
+        
         flags.train_logdir=os.path.join(os.path.expanduser('~/tmp/logs/tensorflow'),flags.net_name,flags.dataset,flags.note)
         flags.checkpoint_dir=flags.train_logdir
         flags.eval_logdir=os.path.join(os.path.expanduser('~/tmp/logs/tensorflow'),flags.net_name,flags.dataset,flags.note,'eval')

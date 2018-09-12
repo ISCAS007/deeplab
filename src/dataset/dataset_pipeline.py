@@ -11,17 +11,23 @@ from torch.utils import data as td
 from easydict import EasyDict as edict
 from deeplab import input_preprocess
 from deeplab import common
+from PIL import Image
 
 def get_dataset_files(dataset_name,dataset_split):
     if dataset_name == 'cityscapes':
         root='deeplab/datasets/cityscapes'
         img_files=glob.glob(os.path.join(root,'leftImg8bit',dataset_split,'**','*leftImg8bit.png'),recursive=True)
-        label_files=glob.glob(os.path.join(root,'gtFine',dataset_split,'**','*labelTrainIds.png'),recursive=True)
+        label_files=glob.glob(os.path.join(root,'gtFine',dataset_split,'**','*labelIds.png'),recursive=True)
         img_files.sort()
         label_files.sort()
     elif dataset_name == 'pascal_voc_seg':
         root='deeplab/datasets/pascal_voc_seg'
-        assert False
+        files_txt=os.path.join(root,'VOCdevkit/VOC2012/ImageSets/Segmentation',dataset_split+'.txt')
+        with open(files_txt,'r') as f:
+            lines=f.readlines()
+            img_files=[os.path.join(root,'VOCdevkit/VOC2012/JPEGImages',l.strip()+'.jpg') for l in lines]
+            label_files=[os.path.join(root,'VOCdevkit/VOC2012/SegmentationClass',l.strip()+'.png') for l in lines]
+            
     else:
         assert False
         
@@ -92,7 +98,10 @@ class dataset_pipeline():
         label_file=self.label_files[index]
         
         img=cv2.imread(img_file,cv2.IMREAD_COLOR)
-        label=cv2.imread(label_file,cv2.IMREAD_GRAYSCALE)
+#        label=cv2.imread(label_file,cv2.IMREAD_GRAYSCALE)
+        lbl_pil = Image.open(label_file)
+        label = np.array(lbl_pil, dtype=np.uint8)
+        
         edge=get_edge(label,self.edge_width,self.edge_class_num,self.ignore_label)
         
         return img,label,edge
