@@ -7,6 +7,7 @@ import tensorflow as tf
 from deeplab import common
 from src.deeplab_edge import deeplab_edge
 from src.deeplab_base import deeplab_base
+from src.deeplab_global import deeplab_global
 from src.utils import tf_config
 import os
 
