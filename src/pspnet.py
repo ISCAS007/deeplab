@@ -348,13 +348,13 @@ def main(unused_argv):
     
     train_result=classifier.evaluate(
         input_fn=model.train_input_fn,
-        steps=20,
+        steps=train_epoch_steps,
         name='train')
     print('train result',train_result)
     
     val_result=classifier.evaluate(
         input_fn=model.eval_input_fn,
-        steps=20,
+        steps=val_epoch_steps,
         name='val')
     
     print('val result',val_result)
