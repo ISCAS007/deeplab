@@ -177,18 +177,32 @@ class deeplab_base():
     
             # Define the evaluation metric.
             metric_map = {}
-            metric_map['miou'],_ = tf.metrics.mean_iou(
+            metric_map['miou'] = tf.metrics.mean_iou(
                 predictions, labels, dataset.num_classes, weights=weights)
-            metric_map['acc'],_ = tf.metrics.accuracy(
+            metric_map['acc'] = tf.metrics.accuracy(
                     labels=labels,predictions=predictions,weights=tf.reshape(weights,shape=[-1]))
             
+            tf.identity(metric_map['miou'][1],'miou1')
+            tf.identity(metric_map['acc'][1],'acc1')
+            tf.identity(metric_map['miou'][0],'miou0')
+            tf.identity(metric_map['acc'][0],'acc0')
             for x in ['miou','acc']:
-                summaries.add(tf.summary.scalar('metrics/%s' %x, metric_map[x]))
+                t=tf.identity(metric_map[x][0])
+                op=tf.summary.scalar('metrics/%s' %x, t)
+                summaries.add(op)
+                t_up=tf.identity(metric_map[x][1])
+                op_up=tf.summary.scalar('metrics/update_%s'%x,tf.reduce_mean(t_up))
+                summaries.add(op_up)
             
             # Add summaries for losses.
             for loss in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
                 summaries.add(tf.summary.scalar('losses/%s' % loss.op.name, loss))
             
+            losses = {}
+            for key in [common.OUTPUT_TYPE,common.EDGE]:
+                losses[key]=graph.get_tensor_by_name(name='losses/%s:0'%key)
+                summaries.add(tf.summary.scalar('losses/'+key,losses[key]))
+                
             # Build the optimizer based on the device specification.
             with tf.device(config.optimizer_device()):
                 learning_rate = train_utils.get_model_learning_rate(
@@ -208,7 +222,7 @@ class deeplab_base():
                 total_loss, grads_and_vars = model_deploy.optimize_clones(
                     clones, optimizer)
                 total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
-                summaries.add(tf.summary.scalar('total_loss', total_loss))
+                summaries.add(tf.summary.scalar('losses/total_loss', total_loss))
     
                 # Modify the gradients for biases and last layer variables.
                 last_layers = model.get_extra_layer_scopes(
@@ -238,7 +252,8 @@ class deeplab_base():
             # Soft placement allows placing on CPU ops without GPU implementation.
             session_config = tf.ConfigProto(
                 allow_soft_placement=True, log_device_placement=False)
-    
+            session_config.gpu_options.allow_growth = True
+            
             # Start the training.
             slim.learning.train(
                 train_tensor,

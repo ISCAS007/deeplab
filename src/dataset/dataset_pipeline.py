@@ -12,6 +12,19 @@ from easydict import EasyDict as edict
 from deeplab import input_preprocess
 from deeplab import common
 from PIL import Image
+import random
+
+DATASETS_CLASS_NUM = {
+    'cityscapes': 19,
+    'pascal_voc_seg': 21,
+    'ade20k': 151,
+}
+
+DATASETS_IGNORE_LABEL = {
+    'cityscapes': 255,
+    'pascal_voc_seg': 255,
+    'ade20k': 0,
+}
 
 def get_dataset_files(dataset_name,dataset_split):
     if dataset_name == 'cityscapes':
@@ -96,7 +109,6 @@ class dataset_pipeline():
     def __getitem__(self, index):
         img_file=self.image_files[index]
         label_file=self.label_files[index]
-        
         img=cv2.imread(img_file,cv2.IMREAD_COLOR)
 #        label=cv2.imread(label_file,cv2.IMREAD_GRAYSCALE)
         lbl_pil = Image.open(label_file)
@@ -115,14 +127,17 @@ class dataset_pipeline():
         height: image height
         width: image width
         """
+        
         for index in range(len(self.image_files)):
             img,label,edge = self.__getitem__(index)
             height,width,_=img.shape
             yield img,label,edge,self.image_files[index],height,width
         
         # when training, do endless loop
+        random_indexs=[i for i in range(len(self.image_files))]
         while self.is_train:
-            for index in range(len(self.image_files)):
+            random.shuffle(random_indexs)
+            for index in random_indexs:
                 img,label,edge = self.__getitem__(index)
                 height,width,_=img.shape
                 yield img,label,edge,self.image_files[index],height,width

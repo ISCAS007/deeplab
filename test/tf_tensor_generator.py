@@ -37,5 +37,6 @@ if __name__ == '__main__':
     for i in trange(len(dataset)+3):
         np_img,np_seg,np_edge,img_name,np_height,np_width=sess.run([img,seg,edge,img_filename,height,width])
         print(img_name,np_height,np_width)
+        print(np_img.shape)
         
     

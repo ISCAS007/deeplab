@@ -13,7 +13,7 @@ from tensorboardX import SummaryWriter
 from tqdm import trange, tqdm
 import six
 import numpy as np
-from src.dataset.dataset_pipeline import get_dataset_files, dataset_pipeline, preprocess_image_and_label
+from src.dataset.dataset_pipeline import DATASETS_CLASS_NUM, DATASETS_IGNORE_LABEL, get_dataset_files, dataset_pipeline, preprocess_image_and_label
 from torch.utils import data as td
 from easydict import EasyDict as edict
 from deployment import model_deploy
@@ -27,17 +27,17 @@ ASPP_SCOPE = 'aspp'
 CONCAT_PROJECTION_SCOPE = 'concat_projection'
 DECODER_SCOPE = 'decoder'
 
-DATASETS_CLASS_NUM = {
-    'cityscapes': 19,
-    'pascal_voc_seg': 21,
-    'ade20k': 151,
-}
-
-DATASETS_IGNORE_LABEL = {
-    'cityscapes': 255,
-    'pascal_voc_seg': 255,
-    'ade20k': 0,
-}
+#DATASETS_CLASS_NUM = {
+#    'cityscapes': 19,
+#    'pascal_voc_seg': 21,
+#    'ade20k': 151,
+#}
+#
+#DATASETS_IGNORE_LABEL = {
+#    'cityscapes': 255,
+#    'pascal_voc_seg': 255,
+#    'ade20k': 0,
+#}
 
 
 class deeplab_edge():
@@ -390,7 +390,8 @@ class deeplab_edge():
             # Soft placement allows placing on CPU ops without GPU implementation.
             session_config = tf.ConfigProto(
                 allow_soft_placement=True, log_device_placement=False)
-    
+            session_config.gpu_options.allow_growth = True
+            
             # Start the training.
             slim.learning.train(
                 train_tensor,

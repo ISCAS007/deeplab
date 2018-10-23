@@ -186,7 +186,7 @@ flags.DEFINE_integer('edge_class_num',2,
 flags.DEFINE_enum('app', 'train', ['train', 'val', 'dump'],
                   'application to run')
 
-flags.DEFINE_enum('net_name','deeplab_edge',['deeplab_edge','deeplab_base','deeplab_global'],
+flags.DEFINE_enum('net_name','deeplab_edge',['deeplab_edge','deeplab_base','deeplab_global','fcn'],
                   'network name, eg: deeplab_edge')
 
 flags.DEFINE_string('note','001','note for tensorboard and logdir')
