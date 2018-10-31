@@ -139,21 +139,21 @@ class pspnet(tf.keras.Model):
 
         return loss
 
-    def get_metric(self, labels, logits, mode_str):
+    def get_metric(self, in_labels, in_logits, mode_str):
         """
         labels: b,h,w,1
         logits: b,h,w,c
         """
-        labels = tf.reshape(labels, shape=[-1])
-        logits = tf.reshape(tf.argmax(logits, -1), shape=[-1])
+        labels = tf.reshape(in_labels, shape=[-1])
+        logits = tf.reshape(tf.argmax(in_logits, -1), shape=[-1])
 
         weights = tf.to_float(tf.not_equal(labels, self.ignore_label))
         labels = tf.where(
             tf.equal(labels, self.ignore_label), tf.zeros_like(labels), labels)
-
+        
         metric_map = {}
         metric_map['miou'] = tf.metrics.mean_iou(
-            logits, labels, self.num_classes, weights=weights)
+            labels=labels, predictions=logits, num_classes=self.num_classes, weights=weights)
         metric_map['acc'] = tf.metrics.accuracy(
             labels=labels, predictions=logits, weights=tf.reshape(weights, shape=[-1]))
 

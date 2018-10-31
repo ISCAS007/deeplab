@@ -312,9 +312,14 @@ class deeplab_edge():
             # Define the evaluation metric.
             metric_map = {}
             metric_map['miou'] = tf.metrics.mean_iou(
-                predictions, labels, dataset.num_classes, weights=weights)
+                    labels=labels, 
+                    predictions=predictions, 
+                    num_classes=dataset.num_classes, 
+                    weights=weights)
             metric_map['acc'] = tf.metrics.accuracy(
-                    labels=labels,predictions=predictions,weights=tf.reshape(weights,shape=[-1]))
+                    labels=labels,
+                    predictions=predictions,
+                    weights=tf.reshape(weights,shape=[-1]))
             
             tf.identity(metric_map['miou'][1],'miou1')
             tf.identity(metric_map['acc'][1],'acc1')

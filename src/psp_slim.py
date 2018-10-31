@@ -12,10 +12,11 @@ from src.dataset.dataset_pipeline import DATASETS_CLASS_NUM, DATASETS_IGNORE_LAB
 from deeplab.utils import input_generator
 from deeplab import common
 from src.utils import tf_config
+from src.pspnet import get_dataset, pspnet
 from tensorflow.contrib.slim.nets import resnet_v1, resnet_v2
 slim=tf.contrib.slim
 
-class psp_slim():
+class psp_slim(pspnet):
     def __init__(self,flags):
         self.flags=flags
         self.num_classes = DATASETS_CLASS_NUM[self.flags.dataset]
@@ -68,3 +69,8 @@ class psp_slim():
             
         print(end_points.keys())
         print(net)
+        
+    def train(self):
+        FLAGS=self.flags        
+        image_batch, annotation_batch = get_dataset(FLAGS,mode=tf.estimator.ModeKeys.TRAIN)
+        model=self.get_model(image_batch,annotation_batch)

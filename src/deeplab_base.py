@@ -13,6 +13,7 @@ from deeplab.datasets import segmentation_dataset
 from deeplab.utils import input_generator
 from deployment import model_deploy
 from deeplab import model
+from src.pspnet import pspnet
 #from deeplab.datasets import segmentation_dataset
 import numpy as np
 import time
@@ -43,10 +44,13 @@ DATASETS_IGNORE_LABEL = {
     'ade20k': 0,
 }
 
-class deeplab_base():
+class deeplab_base(pspnet):
     def __init__(self, flags):
-        self.flags = flags
-        self.name = self.__class__.__name__
+        super().__init__(flags)
+        print('num_classes',self.num_classes)
+        print('ignore_label',self.ignore_label)
+        #self.flags = flags
+        # self.name = self.__class__.__name__
         
     def train(self):
         FLAGS = self.flags
@@ -164,44 +168,18 @@ class deeplab_base():
             predictions = graph.get_tensor_by_name(
                     ('%s/%s:0' % (first_clone_scope, common.OUTPUT_TYPE)).strip('/'))
             predictions = tf.image.resize_bilinear(predictions,tf.shape(labels)[1:3],align_corners=True)
-            
-            labels=tf.reshape(labels,shape=[-1])
-            predictions = tf.reshape(tf.argmax(predictions, 3), shape=[-1])
-            weights = tf.to_float(tf.not_equal(labels, dataset.ignore_label))
-    
-            # Set ignore_label regions to label 0, because metrics.mean_iou requires
-            # range of labels = [0, dataset.num_classes). Note the ignore_label regions
-            # are not evaluated since the corresponding regions contain weights = 0.
-            labels = tf.where(
-                tf.equal(labels, dataset.ignore_label), tf.zeros_like(labels), labels)
-    
-            # Define the evaluation metric.
-            metric_map = {}
-            metric_map['miou'] = tf.metrics.mean_iou(
-                predictions, labels, dataset.num_classes, weights=weights)
-            metric_map['acc'] = tf.metrics.accuracy(
-                    labels=labels,predictions=predictions,weights=tf.reshape(weights,shape=[-1]))
-            
-            tf.identity(metric_map['miou'][1],'miou1')
-            tf.identity(metric_map['acc'][1],'acc1')
-            tf.identity(metric_map['miou'][0],'miou0')
-            tf.identity(metric_map['acc'][0],'acc0')
-            for x in ['miou','acc']:
-                t=tf.identity(metric_map[x][0])
-                op=tf.summary.scalar('metrics/%s' %x, t)
-                summaries.add(op)
-                t_up=tf.identity(metric_map[x][1])
-                op_up=tf.summary.scalar('metrics/update_%s'%x,tf.reduce_mean(t_up))
-                summaries.add(op_up)
+            # predictions shape (2, 513, 513, 19/21)
+            print('predictions shape',predictions.shape)
+            self.get_metric(labels,predictions,'train')
             
             # Add summaries for losses.
             for loss in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
                 summaries.add(tf.summary.scalar('losses/%s' % loss.op.name, loss))
             
-            losses = {}
-            for key in [common.OUTPUT_TYPE,common.EDGE]:
-                losses[key]=graph.get_tensor_by_name(name='losses/%s:0'%key)
-                summaries.add(tf.summary.scalar('losses/'+key,losses[key]))
+#            losses = {}
+#            for key in [common.OUTPUT_TYPE,common.EDGE]:
+#                losses[key]=graph.get_tensor_by_name(name='losses/%s:0'%key)
+#                summaries.add(tf.summary.scalar('losses/'+key,losses[key]))
                 
             # Build the optimizer based on the device specification.
             with tf.device(config.optimizer_device()):
@@ -254,6 +232,29 @@ class deeplab_base():
                 allow_soft_placement=True, log_device_placement=False)
             session_config.gpu_options.allow_growth = True
             
+            init_fn=train_utils.get_model_init_fn(
+                    FLAGS.train_logdir,
+                    FLAGS.tf_initial_checkpoint,
+                    FLAGS.initialize_last_layer,
+                    last_layers,
+                    ignore_missing_vars=True)
+#            init_fn=slim.assign_from_checkpoint_fn(model_path=FLAGS.tf_initial_checkpoint,
+#                                                   var_list=slim.get_variables(),
+#                                                   ignore_missing_vars=True)
+#            saver = tf.train.Saver()
+#            train_writer = tf.summary.FileWriter(FLAGS.train_logdir)
+#            sess=tf.Session(config=session_config)
+#            init_fn(sess)
+#            sess.run(tf.global_variables_initializer())
+#            sess.run(tf.local_variables_initializer())
+#            tf.train.start_queue_runners(sess)
+#            
+#            for i in trange(FLAGS.training_number_of_steps):
+#                loss,summary=sess.run([train_tensor,summary_op])
+#                train_writer.add_summary(summary,i)
+#            
+#            saver.save(sess,os.path.join(FLAGS.train_logdir,'model'),global_step=FLAGS.training_number_of_steps)
+#            train_writer.close()
             # Start the training.
             slim.learning.train(
                 train_tensor,
@@ -264,12 +265,7 @@ class deeplab_base():
                 is_chief=(FLAGS.task == 0),
                 session_config=session_config,
                 startup_delay_steps=startup_delay_steps,
-                init_fn=train_utils.get_model_init_fn(
-                    FLAGS.train_logdir,
-                    FLAGS.tf_initial_checkpoint,
-                    FLAGS.initialize_last_layer,
-                    last_layers,
-                    ignore_missing_vars=True),
+                init_fn=init_fn,
                 summary_op=summary_op,
                 save_summaries_secs=FLAGS.save_summaries_secs,
                 save_interval_secs=FLAGS.save_interval_secs)
@@ -289,7 +285,7 @@ class deeplab_base():
         num_samples=len(dataset_pp)
         
         log_dir = os.path.join(os.path.expanduser(
-            '~/tmp/logs/tensorflow'), self.name, self.flags.dataset, 'eval')
+            '~/tmp/logs/tensorflow'), self.flags.net_name, self.flags.dataset, 'eval')
 #        os.makedirs(log_dir, exist_ok=True)
         FLAGS.eval_logdir=log_dir
         print('eval_logdir is',log_dir)
