@@ -2,4 +2,3 @@ datasets
 __pycache__
 .spyproject
 src/.ipynb_checkpoints
-tf_image_segmentation

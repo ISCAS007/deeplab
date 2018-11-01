@@ -80,29 +80,23 @@ def preprocess_image_and_label(tf_image,tf_label,FLAGS,ignore_label,is_training=
         
 class dataset_pipeline():
     def __init__(self,config,image_files,label_files,is_train=False):
-#        self.config=config
-#        self.num_threads=config.num_threads
-#        self.batch_size=config.batch_size
-        if isinstance(config,edict):
-            self.edge_width=config.edge_width
-            if hasattr(config,'ignore_label'):
-                self.ignore_label=config.ignore_label
-            else:
-                self.ignore_label=None
-                
-            if hasattr(config,'edge_class_num'):
-                self.edge_class_num=config.edge_class_num
-            else:
-                self.edge_class_num=2
+        self.edge_width=config.edge_width
+        self.ignore_label=config.ignore_label
+            
+        if hasattr(config,'edge_class_num'):
+            self.edge_class_num=config.edge_class_num
         else:
-            self.edge_width=config
-            self.ignore_label=None
             self.edge_class_num=2
         
         self.is_train=is_train
         self.image_files=image_files
         self.label_files=label_files
-    
+        
+        if image_files[0].find('leftImg8bit')>=0:
+            self.dataset_name='cityscapes'
+        else:
+            self.dataset_name='pascal_voc_seg'
+        
     def __len__(self):
         return len(self.image_files)
 
@@ -113,7 +107,12 @@ class dataset_pipeline():
 #        label=cv2.imread(label_file,cv2.IMREAD_GRAYSCALE)
         lbl_pil = Image.open(label_file)
         label = np.array(lbl_pil, dtype=np.uint8)
-        
+        if self.dataset_name=='cityscapes':
+            ids = [7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33]
+            ann = np.zeros_like(label)+self.ignore_index
+            for idx, class_id in enumerate(ids):
+                ann[label == class_id] = idx
+            label=ann
         edge=get_edge(label,self.edge_width,self.edge_class_num,self.ignore_label)
         
         return img,label,edge

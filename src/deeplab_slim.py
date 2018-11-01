@@ -5,7 +5,9 @@ slim=tf.contrib.slim
 from src.pspnet import pspnet,get_dataset
 from deeplab import common,model
 from deeplab.utils import train_utils
+from src.deeplab_base import get_extra_layer_scopes
 import os
+from tqdm import trange
 
 class deeplab_slim(pspnet):
     def __init__(self,flags):
@@ -70,6 +72,13 @@ class deeplab_slim(pspnet):
         total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
         tf.summary.scalar('losses/total_loss', total_loss)
         
+        regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+        reg_loss=tf.add_n(regularization_losses)
+        tf.summary.scalar('losses/reg_loss', reg_loss)
+        model_losses = tf.get_collection(tf.GraphKeys.LOSSES)
+        model_loss=tf.add_n(model_losses)
+        tf.summary.scalar('losses/model_loss', model_loss)
+        
         learning_rate = train_utils.get_model_learning_rate(
                     FLAGS.learning_policy, FLAGS.base_learning_rate,
                     FLAGS.learning_rate_decay_step, FLAGS.learning_rate_decay_factor,
@@ -79,6 +88,9 @@ class deeplab_slim(pspnet):
             learning_rate, FLAGS.momentum)
         tf.summary.scalar('learning_rate', learning_rate)
         
+        with tf.control_dependencies([tf.assert_equal(total_loss,model_loss)]):
+            total_loss=model_loss+reg_loss
+        
         global_step = tf.train.get_or_create_global_step()
         train_tensor=optimizer.minimize(total_loss,global_step)
         summary_op=tf.summary.merge_all()
@@ -87,8 +99,14 @@ class deeplab_slim(pspnet):
                 allow_soft_placement=True, log_device_placement=False)
         session_config.gpu_options.allow_growth = True
         
+        last_layers = get_extra_layer_scopes(
+                    FLAGS.last_layers_contain_logits_only)
+        exclude_list = ['global_step']
+        if not FLAGS.initialize_last_layer:
+            exclude_list.extend(last_layers)
+        variables_to_restore = slim.get_variables_to_restore(exclude=exclude_list)
         init_fn=slim.assign_from_checkpoint_fn(model_path=FLAGS.tf_initial_checkpoint,
-                                                   var_list=slim.get_variables(),
+                                                   var_list=variables_to_restore,
                                                    ignore_missing_vars=True)
         saver = tf.train.Saver()
         train_writer = tf.summary.FileWriter(FLAGS.train_logdir)

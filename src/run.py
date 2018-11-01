@@ -9,6 +9,7 @@ from src.deeplab_edge import deeplab_edge
 from src.deeplab_base import deeplab_base
 from src.deeplab_global import deeplab_global
 from src.fcn import fcn
+from src.deeplab_slim import deeplab_slim
 from src.utils import tf_config
 import os
 

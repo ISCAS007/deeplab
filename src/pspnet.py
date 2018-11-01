@@ -151,28 +151,32 @@ class pspnet(tf.keras.Model):
         labels = tf.where(
             tf.equal(labels, self.ignore_label), tf.zeros_like(labels), labels)
         
-        metric_map = {}
-        metric_map['miou'] = tf.metrics.mean_iou(
-            labels=labels, predictions=logits, num_classes=self.num_classes, weights=weights)
-        metric_map['acc'] = tf.metrics.accuracy(
-            labels=labels, predictions=logits, weights=tf.reshape(weights, shape=[-1]))
-
-        for x in ['miou', 'acc']:
-            tf.identity(metric_map[x][0], name='%s/%s' % (mode_str, x))
-            op=tf.summary.scalar('%s/%s' % (mode_str, x), metric_map[x][0])
-            tf.Print(op,[metric_map[x][0]],'%s/%s' % (mode_str, x))
-            
-            tf.identity(metric_map[x][1], name='%s/update_%s' % (mode_str, x))
-            tf.summary.scalar('%s/update_%s' % (mode_str, x),
-                              tf.reduce_mean(metric_map[x][1]))
-
-        hooks = [
-            tf.train.LoggingTensorHook(
-                ['%s/%s' % (mode_str, x) for x in ['miou', 'acc']],
-                every_n_iter=100)
-        ]
-
-        return metric_map, hooks
+        labels=tf.to_int32(labels)
+        logits=tf.to_int32(logits)
+        tf_num_classes=tf.to_int32(self.num_classes)
+        with tf.control_dependencies([tf.assert_less(labels, tf_num_classes),tf.assert_less(logits,tf_num_classes)]):
+            metric_map = {}
+            metric_map['miou'] = tf.metrics.mean_iou(
+                labels=labels, predictions=logits, num_classes=self.num_classes, weights=weights)
+            metric_map['acc'] = tf.metrics.accuracy(
+                labels=labels, predictions=logits, weights=tf.reshape(weights, shape=[-1]))
+    
+            for x in ['miou', 'acc']:
+                tf.identity(metric_map[x][0], name='%s/%s' % (mode_str, x))
+                op=tf.summary.scalar('%s/%s' % (mode_str, x), metric_map[x][0])
+                tf.Print(op,[metric_map[x][0]],'%s/%s' % (mode_str, x))
+                
+                tf.identity(metric_map[x][1], name='%s/update_%s' % (mode_str, x))
+                tf.summary.scalar('%s/update_%s' % (mode_str, x),
+                                  tf.reduce_mean(metric_map[x][1]))
+    
+            hooks = [
+                tf.train.LoggingTensorHook(
+                    ['%s/%s' % (mode_str, x) for x in ['miou', 'acc']],
+                    every_n_iter=100)
+            ]
+    
+            return metric_map, hooks
 
     def model_function(self, features, labels, mode):
         """
