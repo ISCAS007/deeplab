@@ -38,7 +38,8 @@ class fcn(pspnet):
         
         loss=self.get_loss(labels=annotation_batch,logits=upsampled_logits_batch)
         self.get_metric(labels=annotation_batch, logits=upsampled_logits_batch,mode_str='train')
-        train_step = tf.train.AdamOptimizer(learning_rate=FLAGS.base_learning_rate).minimize(loss,  tf.train.get_or_create_global_step())
+        train_step = tf.train.AdamOptimizer(learning_rate=FLAGS.base_learning_rate).minimize(loss,  
+                                           tf.train.get_or_create_global_step())
 
 
         # Variable's initialization functions

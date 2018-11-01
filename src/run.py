@@ -16,7 +16,7 @@ def main(unused_argv):
     flags=tf_config.FLAGS
     print(flags.flags_into_string())
     
-    if flags.net_name in ['deeplab_edge','deeplab_base','deeplab_global']:
+    if flags.net_name in ['deeplab_edge','deeplab_base','deeplab_global','deeplab_slim']:
         if flags.model_variant=='xception_65':
             if flags.tf_initial_checkpoint in [None,'xception']:
                 flags.tf_initial_checkpoint='deeplab/datasets/weights/xception/model.ckpt'
