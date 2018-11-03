@@ -90,9 +90,12 @@ class deeplab_edge():
 #        dataset = segmentation_dataset.get_dataset(
 #            FLAGS.dataset, FLAGS.eval_split, dataset_dir=FLAGS.dataset_dir)
         dataset_split='val'
-        edge_width=20
+        data_config=edict()
+        data_config.edge_width=20
+        data_config.ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        data_config.edge_class_num=FLAGS.edge_class_num
         img_files,label_files=get_dataset_files(FLAGS.dataset,dataset_split)
-        dataset_pp=dataset_pipeline(edge_width,img_files,label_files,is_train=False)
+        dataset_pp=dataset_pipeline(data_config,img_files,label_files,is_train=False)
         num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
         ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
         num_samples=len(dataset_pp)

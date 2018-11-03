@@ -5,7 +5,6 @@ slim=tf.contrib.slim
 from src.pspnet import pspnet,get_dataset
 from deeplab import common,model
 from deeplab.utils import train_utils
-from src.deeplab_base import get_extra_layer_scopes
 import os
 from tqdm import trange
 
@@ -58,10 +57,10 @@ class deeplab_slim(pspnet):
         
         self.get_metric(scaled_labels,logits,'train')
         
-        total_loss=0
+        softmax_loss=0
         # outputs_to_scales_to_logits[output]={}
         for output, num_classes in outputs_to_num_classes.items():
-            total_loss+=train_utils.add_softmax_cross_entropy_loss_for_each_scale(
+            softmax_loss+=train_utils.add_softmax_cross_entropy_loss_for_each_scale(
                 outputs_to_scales_to_logits[output],
                 annotation_batch,
                 num_classes,
@@ -69,8 +68,6 @@ class deeplab_slim(pspnet):
                 loss_weight=1.0,
                 upsample_logits=FLAGS.upsample_logits,
                 scope=output)
-        total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
-        tf.summary.scalar('losses/total_loss', total_loss)
         
         regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
         reg_loss=tf.add_n(regularization_losses)
@@ -84,22 +81,41 @@ class deeplab_slim(pspnet):
                     FLAGS.learning_rate_decay_step, FLAGS.learning_rate_decay_factor,
                     FLAGS.training_number_of_steps, FLAGS.learning_power,
                     FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
-        optimizer = tf.train.MomentumOptimizer(
-            learning_rate, FLAGS.momentum)
+            
+        optimizer = tf.train.MomentumOptimizer(learning_rate, FLAGS.momentum)
         tf.summary.scalar('learning_rate', learning_rate)
         
-        with tf.control_dependencies([tf.assert_equal(total_loss,model_loss)]):
+        with tf.control_dependencies([tf.assert_equal(softmax_loss,model_loss)]):
             total_loss=model_loss+reg_loss
+            total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
+            tf.summary.scalar('losses/total_loss', total_loss)
         
         global_step = tf.train.get_or_create_global_step()
-        train_tensor=optimizer.minimize(total_loss,global_step)
+        
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        grads_and_vars = optimizer.compute_gradients(total_loss)
+        # Create gradient update op.
+        grad_updates = optimizer.apply_gradients(
+            grads_and_vars, global_step=global_step)
+        update_ops.append(grad_updates)
+        update_op = tf.group(*update_ops)
+        
+#        train_tensor=optimizer.minimize(total_loss,global_step)
+#        train_tensor=slim.learning.create_train_op(total_loss=total_loss,
+#            optimizer=optimizer,
+#            global_step=global_step)
+        
+        #BUG update the weight twice???
+        with tf.control_dependencies([update_op]):
+            train_tensor = tf.identity(total_loss, name='train_op')
+        
         summary_op=tf.summary.merge_all()
         
         session_config = tf.ConfigProto(
                 allow_soft_placement=True, log_device_placement=False)
         session_config.gpu_options.allow_growth = True
         
-        last_layers = get_extra_layer_scopes(
+        last_layers = model.get_extra_layer_scopes(
                     FLAGS.last_layers_contain_logits_only)
         exclude_list = ['global_step']
         if not FLAGS.initialize_last_layer:
@@ -108,17 +124,37 @@ class deeplab_slim(pspnet):
         init_fn=slim.assign_from_checkpoint_fn(model_path=FLAGS.tf_initial_checkpoint,
                                                    var_list=variables_to_restore,
                                                    ignore_missing_vars=True)
-        saver = tf.train.Saver()
-        train_writer = tf.summary.FileWriter(FLAGS.train_logdir)
-        sess=tf.Session(config=session_config)
-        init_fn(sess)
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        tf.train.start_queue_runners(sess)
         
-        for i in trange(FLAGS.training_number_of_steps):
-            loss,summary=sess.run([train_tensor,summary_op])
-            train_writer.add_summary(summary,i)
+        #use the train_tensor with slim.learning.train, not session
+#        saver = tf.train.Saver()
+#        train_writer = tf.summary.FileWriter(FLAGS.train_logdir)
+#        sess=tf.Session(config=session_config)
+#        init_fn(sess)
+#        sess.run(tf.global_variables_initializer())
+#        sess.run(tf.local_variables_initializer())
+#        sess.run(tf.tables_initializer())
+#        tf.train.start_queue_runners(sess)
+#        
+#        for i in trange(FLAGS.training_number_of_steps):
+#            loss,summary,n_step=sess.run([train_tensor,summary_op,global_step])
+#            train_writer.add_summary(summary,i)
+#            if i%100==1:
+#                print('%d/%d global_step=%0.2f, loss='%(i,FLAGS.training_number_of_steps,n_step),loss)
+#        
+#        saver.save(sess,os.path.join(FLAGS.train_logdir,'model'),global_step=FLAGS.training_number_of_steps)
+#        train_writer.close()
         
-        saver.save(sess,os.path.join(FLAGS.train_logdir,'model'),global_step=FLAGS.training_number_of_steps)
-        train_writer.close()
+#        Start the training.
+        slim.learning.train(
+            train_tensor,
+            logdir=FLAGS.train_logdir,
+            log_every_n_steps=FLAGS.log_steps,
+            master=FLAGS.master,
+            is_chief=(FLAGS.task == 0),
+            number_of_steps=FLAGS.training_number_of_steps,
+            session_config=session_config,
+            startup_delay_steps=0,
+            init_fn=init_fn,
+            summary_op=summary_op,
+            save_summaries_secs=FLAGS.save_summaries_secs,
+            save_interval_secs=FLAGS.save_interval_secs)

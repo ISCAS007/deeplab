@@ -55,12 +55,15 @@ class deeplab_base(pspnet):
     def train(self):
         FLAGS = self.flags
         dataset_split = 'train'
-        edge_width=20
+        data_config = edict()
+        data_config.edge_width = 20
+        data_config.ignore_label = DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        data_config.edge_class_num = FLAGS.edge_class_num
         img_files, label_files = get_dataset_files(
             FLAGS.dataset, dataset_split)
 
         dataset=edict()
-        dataset_pp=dataset_pipeline(edge_width,img_files,label_files,is_train=True)
+        dataset_pp=dataset_pipeline(data_config,img_files,label_files,is_train=True)
         dataset.num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
         dataset.ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
         dataset.num_samples=len(dataset_pp)
@@ -232,15 +235,20 @@ class deeplab_base(pspnet):
                 allow_soft_placement=True, log_device_placement=False)
             session_config.gpu_options.allow_growth = True
             
-            init_fn=train_utils.get_model_init_fn(
-                    FLAGS.train_logdir,
-                    FLAGS.tf_initial_checkpoint,
-                    FLAGS.initialize_last_layer,
-                    last_layers,
-                    ignore_missing_vars=True)
-#            init_fn=slim.assign_from_checkpoint_fn(model_path=FLAGS.tf_initial_checkpoint,
-#                                                   var_list=slim.get_variables(),
-#                                                   ignore_missing_vars=True)
+#            init_fn=train_utils.get_model_init_fn(
+#                    FLAGS.train_logdir,
+#                    FLAGS.tf_initial_checkpoint,
+#                    FLAGS.initialize_last_layer,
+#                    last_layers,
+#                    ignore_missing_vars=True)
+            
+            exclude_list = ['global_step']
+            if not FLAGS.initialize_last_layer:
+                exclude_list.extend(last_layers)
+            variables_to_restore = slim.get_variables_to_restore(exclude=exclude_list)
+            init_fn=slim.assign_from_checkpoint_fn(model_path=FLAGS.tf_initial_checkpoint,
+                                                   var_list=variables_to_restore,
+                                                   ignore_missing_vars=True)
 #            saver = tf.train.Saver()
 #            train_writer = tf.summary.FileWriter(FLAGS.train_logdir)
 #            sess=tf.Session(config=session_config)
@@ -250,8 +258,10 @@ class deeplab_base(pspnet):
 #            tf.train.start_queue_runners(sess)
 #            
 #            for i in trange(FLAGS.training_number_of_steps):
-#                loss,summary=sess.run([train_tensor,summary_op])
+#                loss,summary,n_step=sess.run([train_tensor,summary_op,global_step])
 #                train_writer.add_summary(summary,i)
+#                if i%100==1:
+#                    tqdm.write('%d/%d global_step=%0.2f, loss=%0.5f'%(i,FLAGS.training_number_of_steps,n_step,loss))
 #            
 #            saver.save(sess,os.path.join(FLAGS.train_logdir,'model'),global_step=FLAGS.training_number_of_steps)
 #            train_writer.close()
@@ -277,9 +287,12 @@ class deeplab_base(pspnet):
 #        dataset = segmentation_dataset.get_dataset(
 #            FLAGS.dataset, FLAGS.eval_split, dataset_dir=FLAGS.dataset_dir)
         dataset_split='val'
-        edge_width=20
+        data_config=edict()
+        data_config.edge_width=20
+        data_config.ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
+        data_config.edge_class_num=FLAGS.edge_class_num
         img_files,label_files=get_dataset_files(FLAGS.dataset,dataset_split)
-        dataset_pp=dataset_pipeline(edge_width,img_files,label_files,is_train=False)
+        dataset_pp=dataset_pipeline(data_config,img_files,label_files,is_train=False)
         num_classes=DATASETS_CLASS_NUM[FLAGS.dataset]
         ignore_label=DATASETS_IGNORE_LABEL[FLAGS.dataset]
         num_samples=len(dataset_pp)

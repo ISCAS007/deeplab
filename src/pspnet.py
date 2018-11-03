@@ -164,7 +164,8 @@ class pspnet(tf.keras.Model):
             for x in ['miou', 'acc']:
                 tf.identity(metric_map[x][0], name='%s/%s' % (mode_str, x))
                 op=tf.summary.scalar('%s/%s' % (mode_str, x), metric_map[x][0])
-                tf.Print(op,[metric_map[x][0]],'%s/%s' % (mode_str, x))
+                # tf.Print work only when evaluation
+                op=tf.Print(op,[metric_map[x][0]],'%s/%s' % (mode_str, x))
                 
                 tf.identity(metric_map[x][1], name='%s/update_%s' % (mode_str, x))
                 tf.summary.scalar('%s/update_%s' % (mode_str, x),
